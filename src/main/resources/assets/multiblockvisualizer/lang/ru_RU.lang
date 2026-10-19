@@ -71,3 +71,5 @@ multiblockvisualizer.options.projectionHints=Подсказки клавиш н�
 multiblockvisualizer.options.projectionHints.tooltip=Выкл: на панели остаётся только прогресс
 multiblockvisualizer.options.projectionMiniBlocks=Мини-блоки в проекции
 multiblockvisualizer.options.projectionMiniBlocks.tooltip=Рисовать блоки проекции в половину размера по центру их места, чтобы были видны все блоки структуры
+multiblockvisualizer.options.projectionFarPlace=Проекция на любом расстоянии
+multiblockvisualizer.options.projectionFarPlace.tooltip=Проекция ставится на блоки далеко за пределами досягаемости, а если блока не видно — висит в воздухе перед вами

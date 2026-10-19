@@ -23,6 +23,7 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.MathHelper;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.util.Vec3;
 import net.minecraft.world.World;
 import net.minecraftforge.client.ForgeHooksClient;
 import net.minecraftforge.common.util.ForgeDirection;
@@ -229,12 +230,31 @@ public class Projection {
         return (facing + 2) & 3;
     }
 
+    private static final double FAR_PLACE_RANGE = 256;
+
     private int[] getTarget(boolean replace) {
         MovingObjectPosition mop = mc.objectMouseOver;
-        if (mop == null || mop.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK) return null;
+        boolean hitBlock = mop != null && mop.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK;
+        if (!hitBlock && Config.projectionFarPlace && mc.renderViewEntity != null) {
+            // far placement: look much further than the reach distance
+            mop = mc.renderViewEntity.rayTrace(FAR_PLACE_RANGE, 1f);
+            hitBlock = mop != null && mop.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK;
+            if (!hitBlock) return getAirTarget();
+        }
+        if (!hitBlock) return null;
         if (replace) return new int[] { mop.blockX, mop.blockY, mop.blockZ };
         ForgeDirection side = ForgeDirection.getOrientation(mop.sideHit);
         return new int[] { mop.blockX + side.offsetX, mop.blockY + side.offsetY, mop.blockZ + side.offsetZ };
+    }
+
+    /** Nothing in sight (sky, unloaded terrain): float the controller in front of the player, clear of the structure. */
+    private int[] getAirTarget() {
+        EntityLivingBase view = mc.renderViewEntity;
+        double distance = Math.max(6, Math.max(scene.getSizeX(), scene.getSizeZ()) + 2);
+        Vec3 look = view.getLook(1f);
+        return new int[] { MathHelper.floor_double(view.posX + look.xCoord * distance),
+            MathHelper.floor_double(view.posY + view.getEyeHeight() + look.yCoord * distance),
+            MathHelper.floor_double(view.posZ + look.zCoord * distance) };
     }
 
     // ------------------------------------------------------------------ dummy <-> world

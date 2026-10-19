@@ -360,6 +360,8 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             Projection.INSTANCE.onSettingsChanged();
         });
 
+        addOption("projectionFarPlace", () -> Config.projectionFarPlace, v -> Config.projectionFarPlace = v);
+
         FlatButton done = new FlatButton(() -> I18n.format("gui.done"), () -> optionsOpen = false).fixedWidth(80);
         optionButtons.add(done);
 

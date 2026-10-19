@@ -19,6 +19,7 @@ public class Config {
     public static boolean projectionPanel = true;
     public static boolean projectionHints = true;
     public static boolean projectionMiniBlocks = false;
+    public static boolean projectionFarPlace = false;
 
     private static Configuration configuration;
 
@@ -69,6 +70,12 @@ public class Config {
             projectionMiniBlocks,
             "Draw the projected blocks at half size, so every block of the structure stays visible");
 
+        projectionFarPlace = configuration.getBoolean(
+            "farPlace",
+            PROJECTION,
+            projectionFarPlace,
+            "Place the projection at any distance (far blocks, or in the air when nothing is in sight)");
+
         if (configuration.hasChanged()) {
             configuration.save();
         }
@@ -89,6 +96,8 @@ public class Config {
             .set(projectionHints);
         configuration.get(PROJECTION, "miniBlocks", false)
             .set(projectionMiniBlocks);
+        configuration.get(PROJECTION, "farPlace", false)
+            .set(projectionFarPlace);
         configuration.save();
     }
 }
