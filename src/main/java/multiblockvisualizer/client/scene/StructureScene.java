@@ -30,6 +30,7 @@ import com.gtnewhorizon.structurelib.structure.ISurvivalBuildEnvironment;
 import blockrenderer6343.api.utils.CreativeItemSource;
 import blockrenderer6343.client.renderer.ImmediateWorldSceneRenderer;
 import blockrenderer6343.client.utils.BRUtil;
+import blockrenderer6343.client.utils.EnumColor;
 import blockrenderer6343.client.world.TrackedDummyWorld;
 import gregtech.api.interfaces.INEIPreviewModifier;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
@@ -37,6 +38,7 @@ import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.interfaces.tileentity.ITurnable;
 import gregtech.api.threads.RunnableMachineUpdate;
 import gregtech.common.misc.GTStructureChannels;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2IntMap;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
@@ -76,7 +78,11 @@ public class StructureScene {
     public int blockCount;
     public String error;
 
+    public final HatchScanner hatches = new HatchScanner();
+
     private int listBase = -1;
+    /** coloured overlay of every hatch position, alpha comes from the blend colour */
+    private int hatchList = -1;
     /** whole structure with hidden faces culled, solid at fullList and translucent at fullList + 1 */
     private int fullList = -1;
     /** every layer with all faces, 2 lists per layer */
@@ -118,7 +124,10 @@ public class StructureScene {
         return units.isEmpty();
     }
 
-    public void build(ItemStack controller, int tier) {
+    /**
+     * @param trigger hologram stack carrying the tier (stack size) and channel values, it is not modified
+     */
+    public void build(ItemStack controller, IConstructable constructable, ItemStack trigger) {
         releaseGl();
         world.clear();
         units.clear();
@@ -127,17 +136,22 @@ public class StructureScene {
         blockStacks.clear();
         selectionStack = null;
         selectedBlocks.clear();
+        hatches.clear();
         error = null;
 
         FAKE_PLAYER.setWorld(world);
         world.unloadEntities(Collections.singletonList(FAKE_PLAYER));
 
-        ItemStack trigger = new ItemStack(StructureLibAPI.getDefaultHologramItem(), tier);
+        ItemStack buildTrigger = trigger.copy();
+        boolean instrumentEnabledByUs = !StructureLibAPI.isInstrumentEnabled();
+        if (instrumentEnabledByUs) StructureLibAPI.enableInstrument(MultiblockVisualizer.MODID);
         try {
-            place(controller, trigger);
+            hatches.record(() -> place(controller, buildTrigger));
         } catch (Throwable t) {
             MultiblockVisualizer.LOG.error("Failed to build preview of {}", controller.getDisplayName(), t);
             error = t.toString();
+        } finally {
+            if (instrumentEnabledByUs) StructureLibAPI.disableInstrument();
         }
 
         blockCount = world.blockMap.size();
@@ -151,6 +165,14 @@ public class StructureScene {
         maxZ = (int) world.getMaxPos().z;
 
         splitIntoUnits();
+
+        if (constructable != null) {
+            try {
+                hatches.resolve(constructable, trigger, world.blockMap.keySet());
+            } catch (Throwable t) {
+                MultiblockVisualizer.LOG.warn("Failed to find hatch positions", t);
+            }
+        }
     }
 
     /** Mirrors GTGuiMultiblockHandler#placeMultiblock from BlockRenderer6343. */
@@ -309,11 +331,72 @@ public class StructureScene {
         fullList = GLAllocation.generateDisplayLists(2);
         compileBlocks(fullList, world.blockMap.keySet(), false);
 
+        if (!hatches.groups.isEmpty()) {
+            hatchList = GLAllocation.generateDisplayLists(1);
+            GL11.glNewList(hatchList, GL11.GL_COMPILE);
+            Tessellator tessellator = Tessellator.instance;
+            tessellator.startDrawingQuads();
+            for (Int2ObjectMap.Entry<LongSet> group : hatches.groups.int2ObjectEntrySet()) {
+                int color = EnumColor.VALUES[group.getIntKey() % EnumColor.VALUES.length].color;
+                tessellator.setColorOpaque_I(color);
+                for (long pos : group.getValue()) addOverlayCube(tessellator, pos, group.getValue());
+            }
+            tessellator.draw();
+            GL11.glEndList();
+        }
+
         // the GL side of an active highlight was dropped together with everything else
         if (selectionStack != null) {
             ItemStack selection = selectionStack;
             selectionStack = null;
             setSelection(selection, selectionLayer);
+        }
+    }
+
+    public int getHatchList() {
+        return hatchList;
+    }
+
+    /** Hatch group of one block, faces shared with blocks of the same group are left out. */
+    private static void addOverlayCube(Tessellator t, long pos, LongSet group) {
+        int x = CoordinatePacker.unpackX(pos), y = CoordinatePacker.unpackY(pos), z = CoordinatePacker.unpackZ(pos);
+        double e = 0.01;
+        double x0 = x - e, y0 = y - e, z0 = z - e, x1 = x + 1 + e, y1 = y + 1 + e, z1 = z + 1 + e;
+        if (!group.contains(CoordinatePacker.pack(x, y - 1, z))) {
+            t.addVertex(x0, y0, z0);
+            t.addVertex(x1, y0, z0);
+            t.addVertex(x1, y0, z1);
+            t.addVertex(x0, y0, z1);
+        }
+        if (!group.contains(CoordinatePacker.pack(x, y + 1, z))) {
+            t.addVertex(x0, y1, z0);
+            t.addVertex(x0, y1, z1);
+            t.addVertex(x1, y1, z1);
+            t.addVertex(x1, y1, z0);
+        }
+        if (!group.contains(CoordinatePacker.pack(x, y, z - 1))) {
+            t.addVertex(x0, y0, z0);
+            t.addVertex(x0, y1, z0);
+            t.addVertex(x1, y1, z0);
+            t.addVertex(x1, y0, z0);
+        }
+        if (!group.contains(CoordinatePacker.pack(x, y, z + 1))) {
+            t.addVertex(x0, y0, z1);
+            t.addVertex(x1, y0, z1);
+            t.addVertex(x1, y1, z1);
+            t.addVertex(x0, y1, z1);
+        }
+        if (!group.contains(CoordinatePacker.pack(x - 1, y, z))) {
+            t.addVertex(x0, y0, z0);
+            t.addVertex(x0, y0, z1);
+            t.addVertex(x0, y1, z1);
+            t.addVertex(x0, y1, z0);
+        }
+        if (!group.contains(CoordinatePacker.pack(x + 1, y, z))) {
+            t.addVertex(x1, y0, z0);
+            t.addVertex(x1, y1, z0);
+            t.addVertex(x1, y1, z1);
+            t.addVertex(x1, y0, z1);
         }
     }
 
@@ -370,7 +453,8 @@ public class StructureScene {
         if (listBase >= 0) GLAllocation.deleteDisplayLists(listBase);
         if (layerListBase >= 0) GLAllocation.deleteDisplayLists(layerListBase);
         if (fullList >= 0) GLAllocation.deleteDisplayLists(fullList);
-        listBase = layerListBase = fullList = -1;
+        if (hatchList >= 0) GLAllocation.deleteDisplayLists(hatchList);
+        listBase = layerListBase = fullList = hatchList = -1;
         for (AnimUnit unit : units) unit.list = -1;
         releaseSelection();
     }

@@ -1,5 +1,6 @@
 package multiblockvisualizer.client.gui;
 
+import java.nio.DoubleBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
@@ -40,7 +41,7 @@ import org.lwjgl.util.glu.GLU;
 import com.gtnewhorizon.gtnhlib.util.CoordinatePacker;
 import com.gtnewhorizon.structurelib.alignment.constructable.IConstructable;
 
-import blockrenderer6343.client.utils.ConstructableData;
+import blockrenderer6343.client.utils.EnumColor;
 import codechicken.nei.recipe.GuiCraftingRecipe;
 import codechicken.nei.recipe.GuiUsageRecipe;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
@@ -49,6 +50,7 @@ import it.unimi.dsi.fastutil.longs.LongSet;
 import multiblockvisualizer.Config;
 import multiblockvisualizer.MultiblockVisualizer;
 import multiblockvisualizer.client.StructureHelper;
+import multiblockvisualizer.client.scene.HatchScanner;
 import multiblockvisualizer.client.scene.StructureScene;
 import multiblockvisualizer.client.scene.StructureScene.AnimUnit;
 
@@ -77,8 +79,9 @@ public class GuiMultiblockVisualizer extends GuiScreen {
     private final IConstructable constructable;
     private StructureScene scene;
 
-    private int tier = 1;
-    private int maxTier = 1;
+    private StructureSettings settings;
+    private final List<FlatButton> settingButtons = new ArrayList<>();
+    private boolean showHatches;
     private int layer = -1;
     private List<ItemStack> ingredients = Collections.emptyList();
     private int ingredientScroll;
@@ -147,10 +150,9 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         panelH = sceneH;
 
         if (scene == null) {
-            ConstructableData data = constructable == null ? null : ConstructableData.getTierData(constructable);
-            maxTier = data == null ? 1 : Math.max(1, data.getMaxTotalTier());
+            settings = new StructureSettings(constructable);
             scene = new StructureScene();
-            rebuild(true);
+            rebuild(true, true);
         }
 
         buildButtons();
@@ -178,9 +180,9 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         mc.displayGuiScreen(parent);
     }
 
-    private void rebuild(boolean resetCamera) {
+    private void rebuild(boolean resetCamera, boolean animate) {
         long start = System.nanoTime();
-        scene.build(controller, tier);
+        scene.build(controller, constructable, settings.createTrigger());
         releaseFloor();
         if (scene.getSizeY() > 0 && layer >= scene.getSizeY()) layer = -1;
         lastUnitStart = scene.layoutTimeline(UNIT_DURATION / Config.animationSpeed, Config.animationSpeed);
@@ -189,6 +191,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         refreshIngredients();
         if (resetCamera) resetCamera();
         replay();
+        if (!animate) skipAnimation();
         MultiblockVisualizer.LOG.debug(
             "Built {} ({} blocks) in {} ms",
             controller.getDisplayName(),
@@ -223,12 +226,16 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             return;
         }
         // the highlight shows the finished structure
+        skipAnimation();
+        scene.setSelection(stack, layer);
+    }
+
+    private void skipAnimation() {
         float time = (System.nanoTime() - animStart) / 1e9f;
-        if (time < getTotalDuration()) {
-            animStart = System.nanoTime() - (long) ((getTotalDuration() + 0.01f) * 1e9);
+        if (time < getTotalDuration() + INTRO_DURATION) {
+            animStart = System.nanoTime() - (long) ((getTotalDuration() + INTRO_DURATION + 0.01f) * 1e9);
             lastSoundLayer = scene.getSizeY();
         }
-        scene.setSelection(stack, layer);
     }
 
     private void resetCamera() {
@@ -270,17 +277,10 @@ public class GuiMultiblockVisualizer extends GuiScreen {
                     .tooltip(() -> I18n.format("multiblockvisualizer.gui.layer.tooltip")));
         buttons.add(new FlatButton(() -> ">", () -> setLayer(layer + 1)).fixedWidth(18));
         buttons.add(
-            new FlatButton(() -> "-", () -> setTier(tier - 1)).fixedWidth(18)
-                .visibleWhen(() -> maxTier > 1)
-                .enabledWhen(() -> tier > 1));
-        buttons.add(
-            new FlatButton(() -> I18n.format("multiblockvisualizer.gui.tier", tier), () -> {}).fixedWidth(60)
-                .visibleWhen(() -> maxTier > 1)
-                .tooltip(() -> I18n.format("multiblockvisualizer.gui.tier.tooltip")));
-        buttons.add(
-            new FlatButton(() -> "+", () -> setTier(tier + 1)).fixedWidth(18)
-                .visibleWhen(() -> maxTier > 1)
-                .enabledWhen(() -> tier < maxTier));
+            new FlatButton(() -> I18n.format("multiblockvisualizer.gui.hatches"), () -> showHatches = !showHatches)
+                .visibleWhen(() -> !scene.hatches.groups.isEmpty())
+                .activeWhen(() -> showHatches)
+                .tooltip(() -> I18n.format("multiblockvisualizer.gui.hatches.tooltip")));
         buttons.add(
             new FlatButton(() -> I18n.format("multiblockvisualizer.gui.rotate"), () -> autoRotate = !autoRotate)
                 .activeWhen(() -> autoRotate));
@@ -302,6 +302,8 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             if (button.isVisible()) x += button.width + gap;
         }
 
+        buildSettingButtons();
+
         closeButton = new FlatButton(() -> "x", this::close).fixedWidth(16);
         closeButton.height = 16;
         closeButton.x = width - 8 - 16;
@@ -310,7 +312,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
     private static String getControlsHelp() {
         StringBuilder help = new StringBuilder(EnumChatFormatting.GOLD + I18n.format("multiblockvisualizer.gui.controls"));
-        for (int i = 1; i <= 7; i++) {
+        for (int i = 1; i <= 8; i++) {
             help.append('\n')
                 .append(EnumChatFormatting.GRAY)
                 .append(I18n.format("multiblockvisualizer.gui.controls." + i));
@@ -328,15 +330,62 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         if (scene.getSelection() != null) scene.setSelection(scene.getSelection(), layer);
     }
 
-    private void setTier(int newTier) {
-        newTier = Math.max(1, Math.min(maxTier, newTier));
-        if (newTier == tier) return;
-        tier = newTier;
-        rebuild(false);
+    private static final int SETTING_ROW = 17;
+    private static final int SETTING_WIDTH = 150;
+
+    /** One row per tier/channel in the top left corner of the scene: [-] Name: value [+] */
+    private void buildSettingButtons() {
+        settingButtons.clear();
+        int x = sceneX + 4, y = sceneY + 4;
+        for (StructureSettings.Setting setting : settings.settings) {
+            FlatButton minus = new FlatButton(() -> "-", () -> changeSetting(setting, isShiftKeyDown() ? -10 : -1))
+                .fixedWidth(16)
+                .enabledWhen(() -> setting.isTier() ? setting.value > setting.min : !setting.unset);
+            FlatButton label = new FlatButton(() -> {
+                String text = setting.name + ": " + setting.getValueText();
+                return fontRendererObj.trimStringToWidth(text, SETTING_WIDTH - 40);
+            }, () -> {
+                if (setting.reset()) applySettings();
+            }).fixedWidth(SETTING_WIDTH - 36)
+                .activeWhen(() -> !setting.unset && !(setting.isTier() && setting.value == 1))
+                .tooltip(() -> setting.name + "\n" + EnumChatFormatting.GRAY + I18n.format("multiblockvisualizer.gui.setting.tooltip"));
+            FlatButton plus = new FlatButton(() -> "+", () -> changeSetting(setting, isShiftKeyDown() ? 10 : 1))
+                .fixedWidth(16)
+                .enabledWhen(() -> setting.unset || setting.value < setting.max);
+            minus.height = label.height = plus.height = SETTING_ROW - 2;
+            minus.x = x;
+            label.x = x + 18;
+            plus.x = x + SETTING_WIDTH - 16;
+            minus.y = label.y = plus.y = y;
+            settingButtons.add(minus);
+            settingButtons.add(label);
+            settingButtons.add(plus);
+            y += SETTING_ROW;
+        }
+    }
+
+    private void changeSetting(StructureSettings.Setting setting, int amount) {
+        if (setting.step(amount)) applySettings();
+    }
+
+    /** Rebuilds the structure with the current tier/channels, without replaying the build animation. */
+    private void applySettings() {
+        ItemStack selection = scene.getSelection();
+        rebuild(false, false);
+        if (selection != null) scene.setSelection(selection, layer);
         // the structure may have grown, keep it in frame
         distance = Math.max(distance, fitDistance());
         centerY = scene.minY + scene.getSizeY() / 2f;
         buildButtons();
+    }
+
+    /** Settings row under the mouse, for the scroll wheel. */
+    private StructureSettings.Setting getHoveredSetting(int mouseX, int mouseY) {
+        for (int i = 0; i < settingButtons.size(); i++) {
+            if (settingButtons.get(i)
+                .isHovered(mouseX, mouseY)) return settings.settings.get(i / 3);
+        }
+        return null;
     }
 
     // ------------------------------------------------------------------ drawing
@@ -367,6 +416,10 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         drawHeader(time);
         drawIngredientPanel(mouseX, mouseY);
         for (FlatButton button : buttons) button.draw(fontRendererObj, mouseX, mouseY);
+        if (!scene.isEmpty()) {
+            for (FlatButton button : settingButtons) button.draw(fontRendererObj, mouseX, mouseY);
+            if (showHatches) drawHatchLegend();
+        }
         closeButton.draw(fontRendererObj, mouseX, mouseY);
 
         drawTooltips(mouseX, mouseY);
@@ -475,8 +528,33 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         return count + "x";
     }
 
+    /** Coloured hint dots with the hatches they accept, bottom left of the scene. */
+    private void drawHatchLegend() {
+        var groups = scene.hatches.groups;
+        int y = sceneY + sceneH - 4 - groups.size() * 11;
+        int maxWidth = sceneW / 2;
+        for (int dot : groups.keySet()) {
+            int color = EnumColor.VALUES[dot % EnumColor.VALUES.length].color;
+            drawRect(sceneX + 5, y + 1, sceneX + 12, y + 8, 0xFF000000 | color);
+            String hint = scene.hatches.hintForDot.get(dot);
+            String text = dot + (hint == null ? "" : ": " + hint);
+            fontRendererObj.drawStringWithShadow(
+                fontRendererObj.trimStringToWidth(text, maxWidth),
+                sceneX + 16,
+                y,
+                0xE0E0E0);
+            y += 11;
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private void drawTooltips(int mouseX, int mouseY) {
+        for (FlatButton button : settingButtons) {
+            if (!scene.isEmpty() && button.isHovered(mouseX, mouseY) && button.getTooltip() != null) {
+                drawHoveringText(fontRendererObj.listFormattedStringToWidth(button.getTooltip(), 240), mouseX, mouseY, fontRendererObj);
+                return;
+            }
+        }
         for (FlatButton button : buttons) {
             if (button.isHovered(mouseX, mouseY) && button.getTooltip() != null) {
                 drawHoveringText(fontRendererObj.listFormattedStringToWidth(button.getTooltip(), 240), mouseX, mouseY, fontRendererObj);
@@ -495,7 +573,26 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
         if (hovered != null && dragButton < 0) {
             ItemStack stack = getPickedStack(hovered);
-            if (stack != null) renderToolTip(stack, mouseX, mouseY);
+            if (stack == null) return;
+            List<String> lines = stack.getTooltip(mc.thePlayer, mc.gameSettings.advancedItemTooltips);
+            int dot = scene.hatches.dotForPos
+                .get(CoordinatePacker.pack(hovered.blockX, hovered.blockY, hovered.blockZ));
+            if (dot != HatchScanner.NO_DOT) {
+                EnumChatFormatting dotColor = EnumColor.VALUES[dot % EnumColor.VALUES.length].formatting;
+                lines.add("");
+                lines.add(EnumChatFormatting.GOLD + I18n.format("multiblockvisualizer.gui.hint_dot", dotColor + "" + dot));
+                String hint = scene.hatches.hintForDot.get(dot);
+                if (hint != null) {
+                    lines.addAll(
+                        fontRendererObj.listFormattedStringToWidth(
+                            EnumChatFormatting.GOLD + I18n.format("multiblockvisualizer.gui.valid_hatches", hint),
+                            220));
+                }
+            }
+            for (int i = 0; i < lines.size(); i++) {
+                lines.set(i, (i == 0 ? stack.getRarity().rarityColor : EnumChatFormatting.GRAY) + lines.get(i));
+            }
+            drawHoveringText(lines, mouseX, mouseY, fontRendererObj);
         }
     }
 
@@ -558,6 +655,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             drawFloor(intro);
             drawBlocks(time);
             drawTileEntities(time, partialTicks);
+            if (showHatches) drawHatchOverlay(time);
 
             if (isInScene(mouseX, mouseY) && dragButton < 0) {
                 hovered = pickCached(time);
@@ -795,6 +893,49 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         setPassState(0, 1f);
     }
 
+    /** Coloured hatch positions, faint through other blocks and stronger where visible, like the NEI "H" button. */
+    private void drawHatchOverlay(float time) {
+        int list = scene.getHatchList();
+        if (list < 0 || time < getTotalDuration()) return;
+
+        if (layer >= 0) {
+            // only the shown layer: keep minY+layer <= y <= minY+layer+1
+            int y = scene.minY + layer;
+            planeBuffer.clear();
+            planeBuffer.put(new double[] { 0, 1, 0, -(y - 0.02) }).flip();
+            GL11.glClipPlane(GL11.GL_CLIP_PLANE0, planeBuffer);
+            planeBuffer.clear();
+            planeBuffer.put(new double[] { 0, -1, 0, y + 1.02 }).flip();
+            GL11.glClipPlane(GL11.GL_CLIP_PLANE1, planeBuffer);
+            GL11.glEnable(GL11.GL_CLIP_PLANE0);
+            GL11.glEnable(GL11.GL_CLIP_PLANE1);
+        }
+
+        GL11.glDisable(GL11.GL_TEXTURE_2D);
+        GL11.glDisable(GL11.GL_CULL_FACE);
+        GL11.glDisable(GL11.GL_ALPHA_TEST);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA);
+        GL11.glDepthMask(false);
+
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL14.glBlendColor(1, 1, 1, 0.18f);
+        GL11.glCallList(list);
+        GL11.glEnable(GL11.GL_DEPTH_TEST);
+        GL14.glBlendColor(1, 1, 1, 0.42f);
+        GL11.glCallList(list);
+
+        GL11.glDisable(GL11.GL_CLIP_PLANE0);
+        GL11.glDisable(GL11.GL_CLIP_PLANE1);
+        GL11.glDepthMask(true);
+        GL11.glEnable(GL11.GL_ALPHA_TEST);
+        GL11.glEnable(GL11.GL_CULL_FACE);
+        GL11.glEnable(GL11.GL_TEXTURE_2D);
+        setPassState(0, 1f);
+    }
+
+    private final DoubleBuffer planeBuffer = BufferUtils.createDoubleBuffer(4);
+
     private void drawHighlight(MovingObjectPosition mop) {
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         GL11.glEnable(GL11.GL_BLEND);
@@ -914,6 +1055,14 @@ public class GuiMultiblockVisualizer extends GuiScreen {
     protected void mouseClicked(int mouseX, int mouseY, int button) {
         if (button == 0) {
             if (closeButton.click(mouseX, mouseY)) return;
+            if (!scene.isEmpty()) {
+                for (FlatButton b : new ArrayList<>(settingButtons)) {
+                    if (b.click(mouseX, mouseY)) {
+                        playClick();
+                        return;
+                    }
+                }
+            }
             for (FlatButton b : buttons) {
                 if (b.click(mouseX, mouseY)) {
                     playClick();
@@ -998,6 +1147,12 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         int mouseY = height - Mouse.getEventY() * height / mc.displayHeight - 1;
         int steps = wheel > 0 ? 1 : -1;
 
+        StructureSettings.Setting setting = scene.isEmpty() ? null : getHoveredSetting(mouseX, mouseY);
+        if (setting != null) {
+            changeSetting(setting, isShiftKeyDown() ? steps * 10 : steps);
+            return;
+        }
+
         if (mouseX >= panelX && mouseX < panelX + panelW && mouseY >= panelY && mouseY < panelY + panelH) {
             ingredientScroll -= steps;
         } else if (isInScene(mouseX, mouseY)) {
@@ -1036,6 +1191,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             case Keyboard.KEY_UP, Keyboard.KEY_PRIOR -> setLayer(layer + 1);
             case Keyboard.KEY_DOWN, Keyboard.KEY_NEXT -> setLayer(layer - 1);
             case Keyboard.KEY_SPACE -> autoRotate = !autoRotate;
+            case Keyboard.KEY_H -> showHatches = !showHatches;
             default -> {}
         }
     }
