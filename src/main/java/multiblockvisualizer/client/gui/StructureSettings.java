@@ -11,7 +11,6 @@ import org.apache.commons.lang3.StringUtils;
 import com.gtnewhorizon.structurelib.StructureLibAPI;
 import com.gtnewhorizon.structurelib.alignment.constructable.ChannelDataAccessor;
 import com.gtnewhorizon.structurelib.alignment.constructable.IConstructable;
-import com.gtnewhorizon.structurelib.structure.IChannelDefinition;
 
 import blockrenderer6343.client.utils.ConstructableData;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
@@ -27,13 +26,14 @@ public class StructureSettings {
         /** null for the general tier (stack size of the trigger) */
         public final String channel;
         public final String name;
-        public final IChannelDefinition definition;
+        /** IChannelDefinition on newer StructureLib, null otherwise (see ChannelCompat) */
+        public final Object definition;
         public final int min, max;
         public int value;
         /** channels can be left unset, the structure then uses its default */
         public boolean unset;
 
-        Setting(String channel, String name, IChannelDefinition definition, int min, int max, int value,
+        Setting(String channel, String name, Object definition, int min, int max, int value,
             boolean unset) {
             this.channel = channel;
             this.name = name;
@@ -103,9 +103,8 @@ public class StructureSettings {
         for (Object2IntMap.Entry<String> entry : data.getChannelMaxTierMap()
             .object2IntEntrySet()) {
             String channel = entry.getKey();
-            IChannelDefinition definition = data.getChannelDefinitions()
-                .get(channel);
-            int min = definition == null ? 1 : Math.max(1, definition.getMinimumValue());
+            Object definition = ChannelCompat.getDefinition(data, channel);
+            int min = Math.max(1, ChannelCompat.getMinimum(definition, 1));
             int max = Math.max(min, entry.getIntValue());
             settings.add(new Setting(channel, StringUtils.capitalize(channel), definition, min, max, min, true));
         }
@@ -122,8 +121,7 @@ public class StructureSettings {
             if (setting.isTier()) {
                 trigger.stackSize = setting.value;
             } else if (!setting.unset) {
-                int value = setting.definition != null ? setting.definition.normalizeValue(setting.value)
-                    : setting.value;
+                int value = ChannelCompat.normalize(setting.definition, setting.value);
                 ChannelDataAccessor.setChannelData(trigger, setting.channel, value);
             }
         }
