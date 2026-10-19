@@ -41,6 +41,7 @@ import com.gtnewhorizon.structurelib.alignment.enumerable.ExtendedFacing;
 import com.gtnewhorizon.structurelib.alignment.enumerable.Flip;
 import com.gtnewhorizon.structurelib.alignment.enumerable.Rotation;
 
+import blockrenderer6343.client.utils.EnumColor;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.metatileentity.implementations.MTEHatch;
@@ -50,7 +51,6 @@ import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import multiblockvisualizer.Config;
-import blockrenderer6343.client.utils.EnumColor;
 import multiblockvisualizer.client.scene.HatchScanner;
 import multiblockvisualizer.client.scene.StructureScene;
 import multiblockvisualizer.client.scene.StructureScene.AnimUnit;
@@ -639,7 +639,8 @@ public class Projection {
         double camZ = view.lastTickPosZ + (view.posZ - view.lastTickPosZ) * partialTicks;
         float time = (System.nanoTime() - placedAt) / 1e9f;
         // mini blocks are already small, keep their highlight steady instead of pulsing
-        float pulse = Config.projectionMiniBlocks ? 0.5f : 0.5f + 0.5f * (float) Math.sin(System.nanoTime() / 1e9 * 3.0);
+        float pulse = Config.projectionMiniBlocks ? 0.5f
+            : 0.5f + 0.5f * (float) Math.sin(System.nanoTime() / 1e9 * 3.0);
 
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         GL11.glPushMatrix();
@@ -785,7 +786,8 @@ public class Projection {
             for (long pos : hatchSlots) {
                 if (hatchFilled.contains(pos) || !isInShownLayer(pos)) continue;
                 int dot = scene.hatches.dotForPos.get(pos);
-                int color = dot == HatchScanner.NO_DOT ? 0xD0D0D0 : EnumColor.VALUES[dot % EnumColor.VALUES.length].color;
+                int color = dot == HatchScanner.NO_DOT ? 0xD0D0D0
+                    : EnumColor.VALUES[dot % EnumColor.VALUES.length].color;
                 drawBox(
                     worldX(pos),
                     worldY(pos),

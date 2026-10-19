@@ -79,7 +79,6 @@ public class Config {
             projectionFarPlace,
             "Place the projection at any distance (far blocks, or in the air when nothing is in sight)");
 
-
         if (configuration.hasChanged()) {
             configuration.save();
         }
