@@ -96,7 +96,8 @@ public class StructureSettings {
 
         int maxTier = Math.max(1, data.getMaxTotalTier());
         if (maxTier > 1) {
-            settings.add(new Setting(null, I18n.format("multiblockvisualizer.gui.tier_name"), null, 1, maxTier, 1, false));
+            settings
+                .add(new Setting(null, I18n.format("multiblockvisualizer.gui.tier_name"), null, 1, maxTier, 1, false));
         }
 
         for (Object2IntMap.Entry<String> entry : data.getChannelMaxTierMap()

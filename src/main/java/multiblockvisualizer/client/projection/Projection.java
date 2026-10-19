@@ -226,8 +226,8 @@ public class Projection {
         ExtendedFacing standard = ExtendedFacing.of(ForgeDirection.SOUTH, Rotation.NORMAL, Flip.NONE);
         for (ExtendedFacing facing : ExtendedFacing.VALUES) {
             ForgeDirection direction = facing.getDirection();
-            if (direction != ForgeDirection.SOUTH && direction != ForgeDirection.UP
-                && direction != ForgeDirection.DOWN) continue;
+            if (direction != ForgeDirection.SOUTH && direction != ForgeDirection.UP && direction != ForgeDirection.DOWN)
+                continue;
             // A vertical flip is an upside-down rotation in disguise (BOTH = UPSIDE_DOWN, VERTICAL = UPSIDE_DOWN +
             // HORIZONTAL) and the wrench can only toggle the horizontal flip. Multis like the Space Elevator deny
             // only the rotations, so their limits still "allow" vertical flips that are unreachable in game.
@@ -417,7 +417,9 @@ public class Projection {
         return new int[] { mop.blockX + side.offsetX, mop.blockY + side.offsetY, mop.blockZ + side.offsetZ };
     }
 
-    /** Nothing in sight (sky, unloaded terrain): float the controller in front of the player, clear of the structure. */
+    /**
+     * Nothing in sight (sky, unloaded terrain): float the controller in front of the player, clear of the structure.
+     */
     private int[] getAirTarget() {
         EntityLivingBase view = mc.renderViewEntity;
         double distance = Math.max(6, Math.max(scene.getSizeX(), scene.getSizeZ()) + 2);
@@ -543,7 +545,8 @@ public class Projection {
      */
     private boolean isHatchSlot(long pos) {
         if (scene.hatches.dotForPos.containsKey(pos)) return true;
-        return scene.world.tileMap.get(pos) instanceof IGregTechTileEntity gt && gt.getMetaTileEntity() instanceof MTEHatch;
+        return scene.world.tileMap.get(pos) instanceof IGregTechTileEntity gt
+            && gt.getMetaTileEntity() instanceof MTEHatch;
     }
 
     private Status getStatus(World world, long pos) {
@@ -588,8 +591,7 @@ public class Projection {
 
         Block expected = scene.world.getBlock(dx, dy, dz);
         if (real != expected) return Status.WRONG;
-        return expected.getDamageValue(scene.world, dx, dy, dz) == real.getDamageValue(world, x, y, z)
-            ? Status.CORRECT
+        return expected.getDamageValue(scene.world, dx, dy, dz) == real.getDamageValue(world, x, y, z) ? Status.CORRECT
             : Status.VARIANT;
     }
 
@@ -645,7 +647,10 @@ public class Projection {
             GL11.glPushMatrix();
             GL11.glTranslated(ax + 0.5 - camX, ay + 0.5 - camY, az + 0.5 - camZ);
             GL11.glRotatef(-90f * rotation, 0, 1, 0);
-            GL11.glTranslatef(-StructureScene.PLACE_X - 0.5f, -StructureScene.PLACE_Y - 0.5f, -StructureScene.PLACE_Z - 0.5f);
+            GL11.glTranslatef(
+                -StructureScene.PLACE_X - 0.5f,
+                -StructureScene.PLACE_Y - 0.5f,
+                -StructureScene.PLACE_Z - 0.5f);
 
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glBlendFunc(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA);
@@ -833,8 +838,8 @@ public class Projection {
         t.addVertex(x1, y0, z1);
         t.draw();
 
-        double[][] c = { { x0, y0, z0 }, { x1, y0, z0 }, { x1, y0, z1 }, { x0, y0, z1 }, { x0, y1, z0 },
-            { x1, y1, z0 }, { x1, y1, z1 }, { x0, y1, z1 } };
+        double[][] c = { { x0, y0, z0 }, { x1, y0, z0 }, { x1, y0, z1 }, { x0, y0, z1 }, { x0, y1, z0 }, { x1, y1, z0 },
+            { x1, y1, z1 }, { x0, y1, z1 } };
         int[] edges = { 0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7 };
         t.startDrawing(GL11.GL_LINES);
         t.setColorRGBA_F(r, g, b, lineAlpha);

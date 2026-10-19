@@ -74,7 +74,8 @@ public class FlatButton {
         boolean hovered = isEnabled && isHovered(mouseX, mouseY);
         boolean isActive = active.getAsBoolean();
 
-        int border = !isEnabled ? 0x30FFFFFF : hovered ? GuiMultiblockVisualizer.ACCENT : isActive ? 0xC0E6B450 : 0x50FFFFFF;
+        int border = !isEnabled ? 0x30FFFFFF
+            : hovered ? GuiMultiblockVisualizer.ACCENT : isActive ? 0xC0E6B450 : 0x50FFFFFF;
         int fill = hovered ? 0xE0302A20 : isActive ? 0xD0282418 : 0xD0181C24;
         GuiMultiblockVisualizer.drawRoundedPanel(x, y, width, height, fill, border);
 
