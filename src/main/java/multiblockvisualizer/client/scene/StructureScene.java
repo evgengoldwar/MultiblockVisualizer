@@ -16,6 +16,7 @@ import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.world.World;
 import net.minecraftforge.client.ForgeHooksClient;
 import net.minecraftforge.common.util.ForgeDirection;
 
@@ -394,6 +395,10 @@ public class StructureScene {
         Tessellator tessellator = Tessellator.instance;
         int savedAo = mc.gameSettings.ambientOcclusion;
         mc.gameSettings.ambientOcclusion = 0;
+        // GT looks up the controller's alignment (rotated/flipped front texture) in the *player's* world at the
+        // rendered coordinates, so point the player at the preview world while the blocks are tessellated
+        World playerWorld = mc.thePlayer != null ? mc.thePlayer.worldObj : null;
+        if (mc.thePlayer != null) mc.thePlayer.worldObj = world;
         try {
             for (int pass = 0; pass < 2; pass++) {
                 ForgeHooksClient.setRenderPass(pass);
@@ -436,6 +441,7 @@ public class StructureScene {
                 }
             }
         } finally {
+            if (mc.thePlayer != null) mc.thePlayer.worldObj = playerWorld;
             ForgeHooksClient.setRenderPass(-1);
             mc.gameSettings.ambientOcclusion = savedAo;
         }
