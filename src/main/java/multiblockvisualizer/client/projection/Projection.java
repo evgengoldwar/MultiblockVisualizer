@@ -16,7 +16,6 @@ import java.util.function.Predicate;
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.audio.PositionedSoundRecord;
-import net.minecraft.client.renderer.GLAllocation;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.texture.TextureMap;
@@ -52,6 +51,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import multiblockvisualizer.Config;
 import multiblockvisualizer.client.scene.HatchScanner;
+import multiblockvisualizer.client.scene.RenderLists;
 import multiblockvisualizer.client.scene.StructureScene;
 import multiblockvisualizer.client.scene.StructureScene.AnimUnit;
 
@@ -366,7 +366,7 @@ public class Projection {
     }
 
     private void releaseHeld() {
-        if (heldList >= 0) GLAllocation.deleteDisplayLists(heldList);
+        RenderLists.free(heldList);
         heldList = -1;
     }
 
@@ -674,7 +674,7 @@ public class Projection {
 
             if (state == State.PLACING) {
                 if (previewList < 0) {
-                    previewList = GLAllocation.generateDisplayLists(2);
+                    previewList = RenderLists.allocate(2);
                     scene.compileBlocks(
                         previewList,
                         scene.world.blockMap.keySet(),
@@ -686,14 +686,14 @@ public class Projection {
                 drawBuildAnimation(time);
             } else {
                 if (ghostList < 0 && !ghostBlocks.isEmpty()) {
-                    ghostList = GLAllocation.generateDisplayLists(2);
+                    ghostList = RenderLists.allocate(2);
                     scene.compileBlocks(ghostList, ghostBlocks, true, getBlockScale());
                 }
                 if (heldMatches.isEmpty()) {
                     if (ghostList >= 0) drawHologram(ghostList, 0.4f + 0.1f * pulse);
                 } else {
                     if (heldList < 0) {
-                        heldList = GLAllocation.generateDisplayLists(2);
+                        heldList = RenderLists.allocate(2);
                         scene.compileBlocks(heldList, heldMatches, true, getBlockScale());
                     }
                     if (ghostList >= 0) drawHologram(ghostList, 0.12f);
@@ -741,7 +741,7 @@ public class Projection {
     private static void drawLists(int list) {
         for (int pass = 0; pass < 2; pass++) {
             ForgeHooksClient.setRenderPass(pass);
-            GL11.glCallList(list + pass);
+            RenderLists.call(list + pass);
         }
         ForgeHooksClient.setRenderPass(-1);
     }
@@ -749,7 +749,7 @@ public class Projection {
     private void drawBuildAnimation(float time) {
         boolean mini = Config.projectionMiniBlocks;
         if (mini && miniUnitBase < 0) {
-            miniUnitBase = GLAllocation.generateDisplayLists(scene.units.size() * 2);
+            miniUnitBase = RenderLists.allocate(scene.units.size() * 2);
             for (int i = 0; i < scene.units.size(); i++) {
                 scene.compileBlocks(miniUnitBase + i * 2, scene.units.get(i).blocks, true, getBlockScale());
             }
@@ -869,14 +869,14 @@ public class Projection {
     /** Display options changed (e.g. mini blocks), rebuild what was compiled with the old ones. */
     public void onSettingsChanged() {
         releaseGhost();
-        if (miniUnitBase >= 0) GLAllocation.deleteDisplayLists(miniUnitBase);
+        RenderLists.free(miniUnitBase);
         miniUnitBase = -1;
     }
 
     private void releaseGhost() {
         releaseHeld();
-        if (ghostList >= 0) GLAllocation.deleteDisplayLists(ghostList);
-        if (previewList >= 0) GLAllocation.deleteDisplayLists(previewList);
+        RenderLists.free(ghostList);
+        RenderLists.free(previewList);
         ghostList = previewList = -1;
     }
 }

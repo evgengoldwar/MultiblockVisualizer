@@ -21,6 +21,9 @@ public class Config {
     public static boolean projectionMiniBlocks = false;
     public static boolean projectionFarPlace = false;
 
+    /** draw structures without display lists, automatic with Angelica */
+    public static boolean immediateRendering = false;
+
     private static Configuration configuration;
 
     public static void synchronizeConfiguration(File configFile) {
@@ -78,6 +81,14 @@ public class Config {
             PROJECTION,
             projectionFarPlace,
             "Place the projection at any distance (far blocks, or in the air when nothing is in sight)");
+
+        immediateRendering = configuration.getBoolean(
+            "immediateRendering",
+            Configuration.CATEGORY_GENERAL,
+            immediateRendering,
+            "Draw structures directly every frame instead of with display lists (slower). Always on with Angelica, "
+                + "whose display list emulation breaks the preview; turn it on if the preview looks broken with "
+                + "another rendering mod");
 
         if (configuration.hasChanged()) {
             configuration.save();

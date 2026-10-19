@@ -100,7 +100,7 @@ public class StructureSettings {
                 .add(new Setting(null, I18n.format("multiblockvisualizer.gui.tier_name"), null, 1, maxTier, 1, false));
         }
 
-        for (Object2IntMap.Entry<String> entry : data.getChannelMaxTierMap()
+        for (Object2IntMap.Entry<String> entry : ChannelCompat.getChannelMaxTiers(data)
             .object2IntEntrySet()) {
             String channel = entry.getKey();
             Object definition = ChannelCompat.getDefinition(data, channel);
