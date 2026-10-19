@@ -207,6 +207,11 @@ public class Projection {
             ForgeDirection direction = facing.getDirection();
             if (direction != ForgeDirection.SOUTH && direction != ForgeDirection.UP
                 && direction != ForgeDirection.DOWN) continue;
+            // A vertical flip is an upside-down rotation in disguise (BOTH = UPSIDE_DOWN, VERTICAL = UPSIDE_DOWN +
+            // HORIZONTAL) and the wrench can only toggle the horizontal flip. Multis like the Space Elevator deny
+            // only the rotations, so their limits still "allow" vertical flips that are unreachable in game.
+            if (facing.getFlip()
+                .isVerticallyFliped()) continue;
             try {
                 if (!alignment.isNewExtendedFacingValid(facing)) continue;
             } catch (Throwable t) {
