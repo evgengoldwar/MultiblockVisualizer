@@ -1,0 +1,27 @@
+key.categories.multiblockvisualizer=Multiblock Visualizer
+key.multiblockvisualizer.open=Просмотр структуры (удерживать над контроллером)
+
+multiblockvisualizer.tooltip.hold=Удерживайте, чтобы увидеть структуру
+
+multiblockvisualizer.gui.replay=Повтор
+multiblockvisualizer.gui.layer=Слой: %s
+multiblockvisualizer.gui.layer.tooltip=Нажмите, чтобы снова показать все слои. Стрелки или Shift+колесо листают слои по одному.
+multiblockvisualizer.gui.all=Все
+multiblockvisualizer.gui.tier=Тир: %s
+multiblockvisualizer.gui.tier.tooltip=Тир / размер структуры (как ползунок тира на странице NEI)
+multiblockvisualizer.gui.rotate=Вращение
+multiblockvisualizer.gui.reset_view=Сброс вида
+multiblockvisualizer.gui.info=%sx%sx%s  ·  блоков: %s
+multiblockvisualizer.gui.building=Строится %s%%
+multiblockvisualizer.gui.components=Компоненты
+multiblockvisualizer.gui.components_layer=Компоненты (слой)
+multiblockvisualizer.gui.nei_hint=ЛКМ / R: рецепт  ·  ПКМ / U: применение
+multiblockvisualizer.gui.empty=В этой структуре нет блоков
+multiblockvisualizer.gui.error=Не удалось построить структуру, подробности в логе
+multiblockvisualizer.gui.controls=Управление
+multiblockvisualizer.gui.controls.1=ЛКМ + движение: вращать
+multiblockvisualizer.gui.controls.2=ПКМ + движение: двигать
+multiblockvisualizer.gui.controls.3=Колесо: масштаб, Shift+колесо: слои
+multiblockvisualizer.gui.controls.4=Вверх / Вниз: следующий / предыдущий слой
+multiblockvisualizer.gui.controls.5=Пробел: вкл/выкл вращение, R: повтор
+multiblockvisualizer.gui.controls.6=Наведите на блок + R / U: рецепт / применение в NEI

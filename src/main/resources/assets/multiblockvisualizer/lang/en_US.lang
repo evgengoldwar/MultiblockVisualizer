@@ -1,0 +1,27 @@
+key.categories.multiblockvisualizer=Multiblock Visualizer
+key.multiblockvisualizer.open=View multiblock structure (hold over controller)
+
+multiblockvisualizer.tooltip.hold=Hold to view structure
+
+multiblockvisualizer.gui.replay=Replay
+multiblockvisualizer.gui.layer=Layer: %s
+multiblockvisualizer.gui.layer.tooltip=Click to show every layer again. Arrows or Shift+Wheel go through the layers one by one.
+multiblockvisualizer.gui.all=All
+multiblockvisualizer.gui.tier=Tier: %s
+multiblockvisualizer.gui.tier.tooltip=Structure tier / size (like the tier slider of the NEI page)
+multiblockvisualizer.gui.rotate=Auto-rotate
+multiblockvisualizer.gui.reset_view=Reset view
+multiblockvisualizer.gui.info=%sx%sx%s  ·  %s blocks
+multiblockvisualizer.gui.building=Building %s%%
+multiblockvisualizer.gui.components=Components
+multiblockvisualizer.gui.components_layer=Components (layer)
+multiblockvisualizer.gui.nei_hint=Click / R: recipe  ·  Right click / U: usage
+multiblockvisualizer.gui.empty=This structure has no blocks to show
+multiblockvisualizer.gui.error=Failed to build the structure, see the log
+multiblockvisualizer.gui.controls=Controls
+multiblockvisualizer.gui.controls.1=Left drag: rotate
+multiblockvisualizer.gui.controls.2=Right drag: move
+multiblockvisualizer.gui.controls.3=Wheel: zoom, Shift+Wheel: layers
+multiblockvisualizer.gui.controls.4=Up / Down: previous / next layer
+multiblockvisualizer.gui.controls.5=Space: toggle auto-rotate, R: replay
+multiblockvisualizer.gui.controls.6=Hover a block + R / U: NEI recipe / usage
