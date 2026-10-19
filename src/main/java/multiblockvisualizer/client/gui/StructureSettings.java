@@ -33,8 +33,7 @@ public class StructureSettings {
         /** channels can be left unset, the structure then uses its default */
         public boolean unset;
 
-        Setting(String channel, String name, Object definition, int min, int max, int value,
-            boolean unset) {
+        Setting(String channel, String name, Object definition, int min, int max, int value, boolean unset) {
             this.channel = channel;
             this.name = name;
             this.definition = definition;
