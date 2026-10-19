@@ -94,6 +94,8 @@ public class Projection {
     private int ghostList = -1;
     /** every block, shown while choosing a place */
     private int previewList = -1;
+    /** mini-block copies of the scene's animation units (2 lists each), the scene only has full size ones */
+    private int miniUnitBase = -1;
     private int ticksToCheck;
     private boolean completed;
 
@@ -176,7 +178,7 @@ public class Projection {
 
     public void remove() {
         if (scene != null) scene.releaseGl();
-        releaseGhost();
+        onSettingsChanged(); // frees every list of our own, the mini units belong to this scene
         scene = null;
         controller = null;
         state = State.NONE;
@@ -517,13 +519,21 @@ public class Projection {
     }
 
     private void drawBuildAnimation(float time) {
-        for (AnimUnit unit : scene.units) {
+        boolean mini = Config.projectionMiniBlocks;
+        if (mini && miniUnitBase < 0) {
+            miniUnitBase = GLAllocation.generateDisplayLists(scene.units.size() * 2);
+            for (int i = 0; i < scene.units.size(); i++) {
+                scene.compileBlocks(miniUnitBase + i * 2, scene.units.get(i).blocks, true, getBlockScale());
+            }
+        }
+        for (int i = 0; i < scene.units.size(); i++) {
+            AnimUnit unit = scene.units.get(i);
             if (layer >= 0 && unit.y - scene.minY != layer) continue;
             float p = (time - unit.startTime) * Config.animationSpeed / UNIT_DURATION;
             if (p <= 0) continue;
             GL11.glPushMatrix();
             if (p < 1) applyUnitTransform(unit, p);
-            drawHologram(unit.list, 0.45f * clamp01(p * 2.5f));
+            drawHologram(mini ? miniUnitBase + i * 2 : unit.list, 0.45f * clamp01(p * 2.5f));
             GL11.glPopMatrix();
         }
     }
@@ -602,6 +612,8 @@ public class Projection {
     /** Display options changed (e.g. mini blocks), rebuild what was compiled with the old ones. */
     public void onSettingsChanged() {
         releaseGhost();
+        if (miniUnitBase >= 0) GLAllocation.deleteDisplayLists(miniUnitBase);
+        miniUnitBase = -1;
     }
 
     private void releaseGhost() {
