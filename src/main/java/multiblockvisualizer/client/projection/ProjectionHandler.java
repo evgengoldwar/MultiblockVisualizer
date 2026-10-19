@@ -48,11 +48,9 @@ public class ProjectionHandler {
         }
         if (mc.currentScreen == null) {
             while (ClientProxy.ROTATE_KEY.isPressed()) projection.rotate();
-            // from "all layers" the first step goes to the bottom layer, where building starts
-            while (ClientProxy.LAYER_UP_KEY.isPressed()) projection.setLayer(projection.getLayer() + 1);
-            while (ClientProxy.LAYER_DOWN_KEY.isPressed()) {
-                if (projection.getLayer() > 0) projection.setLayer(projection.getLayer() - 1);
-            }
+            // cycles all -> bottom ... top -> all, backwards all -> top ... bottom -> all
+            while (ClientProxy.LAYER_UP_KEY.isPressed()) stepLayer(1);
+            while (ClientProxy.LAYER_DOWN_KEY.isPressed()) stepLayer(-1);
             while (ClientProxy.LAYER_ALL_KEY.isPressed()) projection.setLayer(-1);
             while (ClientProxy.DETACH_KEY.isPressed()) {
                 if (projection.getState() == Projection.State.PLACED && !GuiScreen.isShiftKeyDown()) {
@@ -63,6 +61,16 @@ public class ProjectionHandler {
             }
         }
         projection.onClientTick();
+    }
+
+    private void stepLayer(int direction) {
+        int layers = projection.getLayerCount();
+        if (layers <= 0) return;
+        // -1 (all layers) sits between the top and the bottom layer
+        int next = projection.getLayer() + direction;
+        if (next >= layers) next = -1;
+        else if (next < -1) next = layers - 1;
+        projection.setLayer(next);
     }
 
     @SubscribeEvent
