@@ -4,6 +4,7 @@ import static blockrenderer6343.client.utils.BRUtil.FAKE_PLAYER;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 import net.minecraft.block.Block;
@@ -28,14 +29,14 @@ import com.gtnewhorizon.structurelib.alignment.constructable.ISurvivalConstructa
 import com.gtnewhorizon.structurelib.structure.ISurvivalBuildEnvironment;
 
 import blockrenderer6343.api.utils.CreativeItemSource;
-import blockrenderer6343.client.renderer.ImmediateWorldSceneRenderer;
-import blockrenderer6343.client.utils.BRUtil;
 import blockrenderer6343.client.utils.EnumColor;
 import blockrenderer6343.client.world.TrackedDummyWorld;
 import gregtech.api.interfaces.INEIPreviewModifier;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.interfaces.tileentity.ITurnable;
+import gregtech.api.metatileentity.implementations.MTEHatch;
+import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
 import gregtech.api.threads.RunnableMachineUpdate;
 import gregtech.common.misc.GTStructureChannels;
 import it.unimi.dsi.fastutil.longs.Long2IntMap;
@@ -60,7 +61,6 @@ public class StructureScene {
     private static final int MAX_UNITS = 2500;
 
     public final TrackedDummyWorld world = new TrackedDummyWorld();
-    private final ImmediateWorldSceneRenderer ingredientHelper = new ImmediateWorldSceneRenderer(world);
 
     public final List<AnimUnit> units = new ArrayList<>();
     /** packed block position -> index in {@link #units} */
@@ -548,13 +548,48 @@ public class StructureScene {
      */
     public List<ItemStack> getIngredients(int layer) {
         if (blockCount == 0) return Collections.emptyList();
-        if (layer < 0) {
-            ingredientHelper.setRenderAllBlocks();
-        } else {
-            ingredientHelper.setRenderYLayer(layer);
-        }
-        List<ItemStack> ingredients = BRUtil.getIngredients(ingredientHelper);
         world.setVisibleYLevel(layer < 0 ? -1 : minY + layer);
-        return ingredients;
+
+        List<ItemStack> controllers = new ArrayList<>();
+        List<ItemStack> blocks = new ArrayList<>();
+        List<ItemStack> hatchStacks = new ArrayList<>();
+        for (long pos : world.blockMap.keySet()) {
+            if (layer >= 0 && CoordinatePacker.unpackY(pos) != minY + layer) continue;
+            ItemStack stack = getBlockStack(pos);
+            if (stack == null) continue;
+
+            TileEntity tile = world.tileMap.get(pos);
+            IMetaTileEntity mte = tile instanceof IGregTechTileEntity gtTile ? gtTile.getMetaTileEntity() : null;
+            boolean isController = mte instanceof MTEMultiBlockBase
+                || pos == CoordinatePacker.pack(PLACE_X, PLACE_Y, PLACE_Z);
+            List<ItemStack> target = isController ? controllers : mte instanceof MTEHatch ? hatchStacks : blocks;
+            addCounted(target, stack);
+        }
+
+        // controller first, then blocks and (after a separator, null) hatches, both by amount
+        Comparator<ItemStack> byAmount = Comparator.comparingInt((ItemStack stack) -> -stack.stackSize)
+            .thenComparing(ItemStack::getDisplayName);
+        blocks.sort(byAmount);
+        hatchStacks.sort(byAmount);
+
+        List<ItemStack> result = new ArrayList<>(controllers);
+        result.addAll(blocks);
+        if (!hatchStacks.isEmpty()) {
+            if (!result.isEmpty()) result.add(null);
+            result.addAll(hatchStacks);
+        }
+        return result;
+    }
+
+    private static void addCounted(List<ItemStack> list, ItemStack stack) {
+        for (ItemStack existing : list) {
+            if (sameItem(existing, stack)) {
+                existing.stackSize++;
+                return;
+            }
+        }
+        ItemStack copy = stack.copy();
+        copy.stackSize = 1;
+        list.add(copy);
     }
 }

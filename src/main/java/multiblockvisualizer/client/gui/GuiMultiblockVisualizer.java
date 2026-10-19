@@ -483,6 +483,16 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         for (int i = 0; i < rows && i + ingredientScroll < ingredients.size(); i++) {
             ItemStack stack = ingredients.get(i + ingredientScroll);
             int rowY = listY + i * ROW_HEIGHT;
+            if (stack == null) {
+                // separator between the structure blocks and the hatches
+                String label = I18n.format("multiblockvisualizer.gui.hatches");
+                int labelW = fontRendererObj.getStringWidth(label);
+                int lineY = rowY + ROW_HEIGHT / 2;
+                drawRect(panelX + 4, lineY, panelX + 8, lineY + 1, 0x50FFFFFF);
+                fontRendererObj.drawString(label, panelX + 11, lineY - 4, 0x808080);
+                drawRect(panelX + 14 + labelW, lineY, panelX + panelW - 4, lineY + 1, 0x50FFFFFF);
+                continue;
+            }
             if (StructureScene.sameItem(stack, scene.getSelection())) {
                 drawRoundedPanel(panelX + 2, rowY, panelW - 4, ROW_HEIGHT, 0x40E6B450, ACCENT);
             } else if (mouseX >= panelX + 2 && mouseX < panelX + panelW - 2 && mouseY >= rowY && mouseY < rowY + ROW_HEIGHT) {
