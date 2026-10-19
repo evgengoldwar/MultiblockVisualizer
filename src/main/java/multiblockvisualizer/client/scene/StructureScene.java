@@ -11,6 +11,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GLAllocation;
 import net.minecraft.client.renderer.RenderBlocks;
 import net.minecraft.client.renderer.Tessellator;
+import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraftforge.client.ForgeHooksClient;
@@ -41,6 +42,9 @@ import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
+import it.unimi.dsi.fastutil.longs.LongIterable;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.fastutil.longs.LongSet;
 import multiblockvisualizer.MultiblockVisualizer;
 
 /**
@@ -60,14 +64,29 @@ public class StructureScene {
     public final List<AnimUnit> units = new ArrayList<>();
     /** packed block position -> index in {@link #units} */
     public final Long2IntMap unitOfBlock = new Long2IntOpenHashMap();
+    /** Only the tiles that actually have a TESR, everything else is in the display lists. */
     public final Long2ObjectMap<TileEntity> renderedTiles = new Long2ObjectOpenHashMap<>();
+    /** index of the first unit of every layer in {@link #units}, plus a final entry == units.size() */
+    public int[] layerUnitStart = new int[0];
+    /** latest start time of any unit in the layer */
+    public float[] layerLastStart = new float[0];
+    private final Long2ObjectMap<ItemStack> blockStacks = new Long2ObjectOpenHashMap<>();
 
     public int minX, minY, minZ, maxX, maxY, maxZ;
     public int blockCount;
     public String error;
 
     private int listBase = -1;
-    private int listCount;
+    /** whole structure with hidden faces culled, solid at fullList and translucent at fullList + 1 */
+    private int fullList = -1;
+    /** every layer with all faces, 2 lists per layer */
+    private int layerListBase = -1;
+
+    // highlight of one component: selected solid/translucent, ghost solid/translucent, outlines
+    private int selectionBase = -1;
+    private ItemStack selectionStack;
+    private int selectionLayer;
+    public final LongSet selectedBlocks = new LongOpenHashSet();
 
     public static class AnimUnit {
 
@@ -105,6 +124,9 @@ public class StructureScene {
         units.clear();
         unitOfBlock.clear();
         renderedTiles.clear();
+        blockStacks.clear();
+        selectionStack = null;
+        selectedBlocks.clear();
         error = null;
 
         FAKE_PLAYER.setWorld(world);
@@ -192,7 +214,9 @@ public class StructureScene {
             unit.blocks.add(pos);
 
             TileEntity tile = world.tileMap.get(pos);
-            if (tile != null) renderedTiles.put(pos, tile);
+            if (tile != null && TileEntityRendererDispatcher.instance.hasSpecialRenderer(tile)) {
+                renderedTiles.put(pos, tile);
+            }
         }
 
         units.addAll(byCell.values());
@@ -214,6 +238,16 @@ public class StructureScene {
             if (a.y != b.y) return Integer.compare(a.y, b.y);
             return Float.compare(a.centerX + a.centerZ, b.centerX + b.centerZ);
         });
+        int layers = getSizeY();
+        layerUnitStart = new int[layers + 1];
+        layerLastStart = new float[layers];
+        int unitIndex = 0;
+        for (int l = 0; l < layers; l++) {
+            layerUnitStart[l] = unitIndex;
+            while (unitIndex < units.size() && units.get(unitIndex).y - minY == l) unitIndex++;
+        }
+        layerUnitStart[layers] = units.size();
+
         for (int i = 0; i < units.size(); i++) {
             for (long pos : units.get(i).blocks) {
                 unitOfBlock.put(pos, i);
@@ -239,6 +273,8 @@ public class StructureScene {
             float diagonal = (unit.centerX - 0.5f - minX + unit.centerZ - 0.5f - minZ) / diagonalSpan;
             unit.startTime = (unit.y - minY) * layerStep + Math.max(0, Math.min(1, diagonal)) * sweep;
             last = Math.max(last, unit.startTime);
+            int l = unit.y - minY;
+            layerLastStart[l] = Math.max(layerLastStart[l], unit.startTime);
         }
         return last;
     }
@@ -247,47 +283,81 @@ public class StructureScene {
         return listBase >= 0;
     }
 
-    /** Compiles two display lists per unit: solid pass at list, translucent pass at list + 1. */
+    /**
+     * Compiles the geometry: two lists per animation unit (only used while the unit is falling), two per layer and
+     * two for the whole, finished structure, so a settled scene costs a couple of glCallList per frame.
+     */
     public void compile() {
         if (isCompiled() || units.isEmpty()) return;
 
-        Minecraft mc = Minecraft.getMinecraft();
-        listCount = units.size() * 2;
-        listBase = GLAllocation.generateDisplayLists(listCount);
+        listBase = GLAllocation.generateDisplayLists(units.size() * 2);
+        for (int i = 0; i < units.size(); i++) {
+            AnimUnit unit = units.get(i);
+            unit.list = listBase + i * 2;
+            // Neighbours are not there yet while the structure builds, so never cull faces against them
+            compileBlocks(unit.list, unit.blocks, true);
+        }
 
+        int layers = getSizeY();
+        layerListBase = GLAllocation.generateDisplayLists(layers * 2);
+        for (int l = 0; l < layers; l++) {
+            LongArrayList blocks = new LongArrayList();
+            for (int i = layerUnitStart[l]; i < layerUnitStart[l + 1]; i++) blocks.addAll(units.get(i).blocks);
+            compileBlocks(layerListBase + l * 2, blocks, true);
+        }
+
+        fullList = GLAllocation.generateDisplayLists(2);
+        compileBlocks(fullList, world.blockMap.keySet(), false);
+
+        // the GL side of an active highlight was dropped together with everything else
+        if (selectionStack != null) {
+            ItemStack selection = selectionStack;
+            selectionStack = null;
+            setSelection(selection, selectionLayer);
+        }
+    }
+
+    public int getFullList() {
+        return fullList;
+    }
+
+    public int getLayerList(int layer) {
+        return layerListBase + layer * 2;
+    }
+
+    /** Compiles the given blocks into list (solid pass) and list + 1 (translucent pass). */
+    private void compileBlocks(int list, LongIterable blocks, boolean allFaces) {
+        Minecraft mc = Minecraft.getMinecraft();
         RenderBlocks renderBlocks = new RenderBlocks(world);
-        // Neighbours are not there yet while the structure builds, so never cull faces against them
-        renderBlocks.renderAllFaces = true;
+        renderBlocks.renderAllFaces = allFaces;
         Tessellator tessellator = Tessellator.instance;
         int savedAo = mc.gameSettings.ambientOcclusion;
         mc.gameSettings.ambientOcclusion = 0;
         try {
-            for (int i = 0; i < units.size(); i++) {
-                AnimUnit unit = units.get(i);
-                unit.list = listBase + i * 2;
-                for (int pass = 0; pass < 2; pass++) {
-                    ForgeHooksClient.setRenderPass(pass);
-                    GL11.glNewList(unit.list + pass, GL11.GL_COMPILE);
-                    tessellator.startDrawingQuads();
-                    tessellator.setBrightness(15 << 20 | 15 << 4);
-                    try {
-                        for (long pos : unit.blocks) {
-                            Block block = world.blockMap.get(pos);
-                            if (block == null || !block.canRenderInPass(pass)) continue;
-                            renderBlocks.setRenderBounds(0, 0, 0, 1, 1, 1);
+            for (int pass = 0; pass < 2; pass++) {
+                ForgeHooksClient.setRenderPass(pass);
+                GL11.glNewList(list + pass, GL11.GL_COMPILE);
+                tessellator.startDrawingQuads();
+                tessellator.setBrightness(15 << 20 | 15 << 4);
+                try {
+                    for (long pos : blocks) {
+                        Block block = world.blockMap.get(pos);
+                        if (block == null || !block.canRenderInPass(pass)) continue;
+                        renderBlocks.setRenderBounds(0, 0, 0, 1, 1, 1);
+                        try {
                             renderBlocks.renderBlockByRenderType(
                                 block,
                                 CoordinatePacker.unpackX(pos),
                                 CoordinatePacker.unpackY(pos),
                                 CoordinatePacker.unpackZ(pos));
+                        } catch (Throwable t) {
+                            MultiblockVisualizer.LOG.warn("Failed to render a preview block", t);
                         }
-                    } catch (Throwable t) {
-                        MultiblockVisualizer.LOG.warn("Failed to render a preview block", t);
-                    } finally {
-                        tessellator.draw();
-                        tessellator.setTranslation(0, 0, 0);
-                        GL11.glEndList();
                     }
+                } finally {
+                    tessellator.draw();
+                    tessellator.setTranslation(0, 0, 0);
+                    GL11.glEndList();
                 }
             }
         } finally {
@@ -297,11 +367,115 @@ public class StructureScene {
     }
 
     public void releaseGl() {
-        if (listBase >= 0) {
-            GLAllocation.deleteDisplayLists(listBase);
-            listBase = -1;
-            for (AnimUnit unit : units) unit.list = -1;
+        if (listBase >= 0) GLAllocation.deleteDisplayLists(listBase);
+        if (layerListBase >= 0) GLAllocation.deleteDisplayLists(layerListBase);
+        if (fullList >= 0) GLAllocation.deleteDisplayLists(fullList);
+        listBase = layerListBase = fullList = -1;
+        for (AnimUnit unit : units) unit.list = -1;
+        releaseSelection();
+    }
+
+    private void releaseSelection() {
+        if (selectionBase >= 0) GLAllocation.deleteDisplayLists(selectionBase);
+        selectionBase = -1;
+    }
+
+    // ------------------------------------------------------------------ component highlight
+
+    /** The item a block counts as in the component list (same rule as BRUtil#getIngredients). */
+    public ItemStack getBlockStack(long pos) {
+        if (blockStacks.containsKey(pos)) return blockStacks.get(pos);
+        ItemStack result = null;
+        int x = CoordinatePacker.unpackX(pos), y = CoordinatePacker.unpackY(pos), z = CoordinatePacker.unpackZ(pos);
+        Block block = world.getBlock(x, y, z);
+        try {
+            if (block.quantityDropped(world.rand) != 1) {
+                result = new ItemStack(block);
+            } else {
+                List<ItemStack> drops = block.getDrops(world, x, y, z, world.getBlockMetadata(x, y, z), 0);
+                if (!drops.isEmpty()) result = drops.get(0);
+            }
+        } catch (Throwable ignored) {}
+        blockStacks.put(pos, result);
+        return result;
+    }
+
+    public static boolean sameItem(ItemStack a, ItemStack b) {
+        return a != null && b != null && a.getItem() == b.getItem() && a.getItemDamage() == b.getItemDamage();
+    }
+
+    public ItemStack getSelection() {
+        return selectionStack;
+    }
+
+    /**
+     * Highlights every block of the given component (null clears it).
+     *
+     * @param layer the layer filter currently shown, -1 for all
+     */
+    public void setSelection(ItemStack stack, int layer) {
+        if (stack == null) {
+            selectionStack = null;
+            selectedBlocks.clear();
+            releaseSelection();
+            return;
         }
+        if (sameItem(stack, selectionStack) && layer == selectionLayer && selectionBase >= 0) return;
+        selectionStack = stack.copy();
+        selectionLayer = layer;
+        releaseSelection();
+
+        LongArrayList selected = new LongArrayList();
+        LongArrayList ghosts = new LongArrayList();
+        selectedBlocks.clear();
+        for (long pos : world.blockMap.keySet()) {
+            if (layer >= 0 && CoordinatePacker.unpackY(pos) != minY + layer) continue;
+            if (sameItem(getBlockStack(pos), selectionStack)) {
+                selected.add(pos);
+                selectedBlocks.add(pos);
+            } else {
+                ghosts.add(pos);
+            }
+        }
+
+        selectionBase = GLAllocation.generateDisplayLists(5);
+        compileBlocks(selectionBase, selected, true);
+        compileBlocks(selectionBase + 2, ghosts, true);
+
+        // outlines of the selected blocks, colour comes from glColor so they can pulse
+        GL11.glNewList(selectionBase + 4, GL11.GL_COMPILE);
+        Tessellator tessellator = Tessellator.instance;
+        tessellator.startDrawing(GL11.GL_LINES);
+        tessellator.disableColor();
+        double e = 0.004;
+        for (long pos : selected) {
+            double x = CoordinatePacker.unpackX(pos), y = CoordinatePacker.unpackY(pos),
+                z = CoordinatePacker.unpackZ(pos);
+            addBoxLines(tessellator, x - e, y - e, z - e, x + 1 + e, y + 1 + e, z + 1 + e);
+        }
+        tessellator.draw();
+        GL11.glEndList();
+    }
+
+    /** solid/translucent lists of the highlighted blocks */
+    public int getSelectedList() {
+        return selectionBase;
+    }
+
+    /** solid/translucent lists of every other block */
+    public int getGhostList() {
+        return selectionBase + 2;
+    }
+
+    public int getOutlineList() {
+        return selectionBase + 4;
+    }
+
+    private static void addBoxLines(Tessellator t, double x0, double y0, double z0, double x1, double y1, double z1) {
+        double[][] corners = { { x0, y0, z0 }, { x1, y0, z0 }, { x1, y0, z1 }, { x0, y0, z1 }, { x0, y1, z0 },
+            { x1, y1, z0 }, { x1, y1, z1 }, { x0, y1, z1 } };
+        int[] edges = { 0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7 };
+        for (int i : edges) t.addVertex(corners[i][0], corners[i][1], corners[i][2]);
     }
 
     /**

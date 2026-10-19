@@ -3,6 +3,7 @@ package multiblockvisualizer.client.gui;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -11,6 +12,7 @@ import net.minecraft.client.audio.PositionedSoundRecord;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.ScaledResolution;
+import net.minecraft.client.renderer.GLAllocation;
 import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.RenderGlobal;
 import net.minecraft.client.renderer.RenderHelper;
@@ -67,6 +69,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
     // LWJGL 2 only exposes these through ARB_imaging, the values are core since OpenGL 1.4
     private static final int GL_CONSTANT_ALPHA = 0x8003;
     private static final int GL_ONE_MINUS_CONSTANT_ALPHA = 0x8004;
+    private static final float GHOST_ALPHA = 0.12f;
     private static final ResourceLocation LAND_SOUND = new ResourceLocation("random.click");
 
     private final ItemStack controller;
@@ -109,6 +112,12 @@ public class GuiMultiblockVisualizer extends GuiScreen {
     private final FloatBuffer unprojected = BufferUtils.createFloatBuffer(3);
     private final LongSet pickTargets = new LongOpenHashSet();
     private MovingObjectPosition hovered;
+    private final float[] pickState = new float[12];
+    private final float[] lastPickState = new float[12];
+
+    // cached floor plate
+    private int floorList = -1;
+    private float floorListY;
 
     public GuiMultiblockVisualizer(ItemStack controller, GuiScreen parent) {
         this.controller = controller;
@@ -149,6 +158,12 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         Keyboard.enableRepeatEvents(false);
         // Display lists are recreated lazily if we come back (e.g. from an NEI recipe page)
         if (scene != null) scene.releaseGl();
+        releaseFloor();
+    }
+
+    private void releaseFloor() {
+        if (floorList >= 0) GLAllocation.deleteDisplayLists(floorList);
+        floorList = -1;
     }
 
     @Override
@@ -163,6 +178,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
     private void rebuild(boolean resetCamera) {
         long start = System.nanoTime();
         scene.build(controller, tier);
+        releaseFloor();
         if (scene.getSizeY() > 0 && layer >= scene.getSizeY()) layer = -1;
         lastUnitStart = scene.layoutTimeline(UNIT_DURATION / Config.animationSpeed, Config.animationSpeed);
         pickTargets.clear();
@@ -188,8 +204,28 @@ public class GuiMultiblockVisualizer extends GuiScreen {
     }
 
     private void replay() {
+        scene.setSelection(null, layer);
         animStart = System.nanoTime();
         lastSoundLayer = -1;
+    }
+
+    private float getTotalDuration() {
+        return lastUnitStart + UNIT_DURATION / Config.animationSpeed;
+    }
+
+    /** Highlights all blocks of a component, clicking the same one again clears it. */
+    private void toggleSelection(ItemStack stack) {
+        if (StructureScene.sameItem(stack, scene.getSelection())) {
+            scene.setSelection(null, layer);
+            return;
+        }
+        // the highlight shows the finished structure
+        float time = (System.nanoTime() - animStart) / 1e9f;
+        if (time < getTotalDuration()) {
+            animStart = System.nanoTime() - (long) ((getTotalDuration() + 0.01f) * 1e9);
+            lastSoundLayer = scene.getSizeY();
+        }
+        scene.setSelection(stack, layer);
     }
 
     private void resetCamera() {
@@ -265,7 +301,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
     private static String getControlsHelp() {
         StringBuilder help = new StringBuilder(EnumChatFormatting.GOLD + I18n.format("multiblockvisualizer.gui.controls"));
-        for (int i = 1; i <= 6; i++) {
+        for (int i = 1; i <= 7; i++) {
             help.append('\n')
                 .append(EnumChatFormatting.GRAY)
                 .append(I18n.format("multiblockvisualizer.gui.controls." + i));
@@ -280,6 +316,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         if (newLayer == layer) return;
         layer = newLayer;
         refreshIngredients();
+        if (scene.getSelection() != null) scene.setSelection(scene.getSelection(), layer);
     }
 
     private void setTier(int newTier) {
@@ -360,7 +397,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
     private float getBuildProgress(float time) {
         if (scene.isEmpty()) return 1;
-        return Math.max(0, Math.min(1, time / (lastUnitStart + UNIT_DURATION / Config.animationSpeed)));
+        return Math.max(0, Math.min(1, time / getTotalDuration()));
     }
 
     private void drawIngredientPanel(int mouseX, int mouseY) {
@@ -378,7 +415,9 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         for (int i = 0; i < rows && i + ingredientScroll < ingredients.size(); i++) {
             ItemStack stack = ingredients.get(i + ingredientScroll);
             int rowY = listY + i * ROW_HEIGHT;
-            if (mouseX >= panelX + 2 && mouseX < panelX + panelW - 2 && mouseY >= rowY && mouseY < rowY + ROW_HEIGHT) {
+            if (StructureScene.sameItem(stack, scene.getSelection())) {
+                drawRoundedPanel(panelX + 2, rowY, panelW - 4, ROW_HEIGHT, 0x40E6B450, ACCENT);
+            } else if (mouseX >= panelX + 2 && mouseX < panelX + panelW - 2 && mouseY >= rowY && mouseY < rowY + ROW_HEIGHT) {
                 drawRect(panelX + 2, rowY, panelX + panelW - 2, rowY + ROW_HEIGHT, 0x30FFFFFF);
             }
 
@@ -512,7 +551,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             drawTileEntities(time, partialTicks);
 
             if (isInScene(mouseX, mouseY) && dragButton < 0) {
-                hovered = pick();
+                hovered = pickCached(time);
                 if (hovered != null) drawHighlight(hovered);
             }
         } catch (Throwable t) {
@@ -540,9 +579,24 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
     private void drawFloor(float alpha) {
         if (alpha <= 0) return;
+        float y = (layer < 0 ? scene.minY : scene.minY + layer) - 0.02f;
+        if (alpha < 1) {
+            drawFloorGeometry(y, alpha);
+            return;
+        }
+        if (floorList < 0 || floorListY != y) {
+            if (floorList < 0) floorList = GLAllocation.generateDisplayLists(1);
+            floorListY = y;
+            GL11.glNewList(floorList, GL11.GL_COMPILE);
+            drawFloorGeometry(y, 1f);
+            GL11.glEndList();
+        }
+        GL11.glCallList(floorList);
+    }
+
+    private void drawFloorGeometry(float y, float alpha) {
         int x0 = scene.minX - 1, x1 = scene.maxX + 1;
         int z0 = scene.minZ - 1, z1 = scene.maxZ + 1;
-        float y = (layer < 0 ? scene.minY : scene.minY + layer) - 0.02f;
 
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         GL11.glDisable(GL11.GL_CULL_FACE);
@@ -587,24 +641,85 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         GL11.glEnable(GL11.GL_ALPHA_TEST);
         GL11.glAlphaFunc(GL11.GL_GREATER, 0.1f);
 
+        if (scene.getSelection() != null) {
+            drawSelection(time);
+            return;
+        }
+
+        float duration = UNIT_DURATION / Config.animationSpeed;
+        boolean finished = time >= getTotalDuration();
+        int fromLayer = layer < 0 ? 0 : layer;
+        int toLayer = layer < 0 ? scene.getSizeY() - 1 : layer;
+
         for (int pass = 0; pass < 2; pass++) {
             ForgeHooksClient.setRenderPass(pass);
-            // settled units first, then the ones still falling (blended) on top
             setPassState(pass, 1f);
-            for (AnimUnit unit : scene.units) {
-                if (isUnitVisible(unit) && unitProgress(unit, time) >= 1) GL11.glCallList(unit.list + pass);
+            if (layer < 0 && finished) {
+                // one call for the whole structure, hidden faces culled
+                GL11.glCallList(scene.getFullList() + pass);
+                continue;
             }
-            for (AnimUnit unit : scene.units) {
-                if (!isUnitVisible(unit)) continue;
-                float p = unitProgress(unit, time);
-                if (p <= 0 || p >= 1) continue;
-                setPassState(pass, clamp01(p * 3f));
-                GL11.glPushMatrix();
-                applyUnitTransform(unit, p);
-                GL11.glCallList(unit.list + pass);
-                GL11.glPopMatrix();
+
+            // landed layers in one call each, settled units of the layers still building one by one
+            for (int l = fromLayer; l <= toLayer; l++) {
+                if (time >= scene.layerLastStart[l] + duration) {
+                    GL11.glCallList(scene.getLayerList(l) + pass);
+                    continue;
+                }
+                for (int i = scene.layerUnitStart[l]; i < scene.layerUnitStart[l + 1]; i++) {
+                    AnimUnit unit = scene.units.get(i);
+                    if (unitProgress(unit, time) >= 1) GL11.glCallList(unit.list + pass);
+                }
+            }
+
+            // then the falling ones, blended on top
+            for (int l = fromLayer; l <= toLayer; l++) {
+                if (time >= scene.layerLastStart[l] + duration) continue;
+                for (int i = scene.layerUnitStart[l]; i < scene.layerUnitStart[l + 1]; i++) {
+                    AnimUnit unit = scene.units.get(i);
+                    float p = unitProgress(unit, time);
+                    if (p <= 0 || p >= 1) continue;
+                    setPassState(pass, clamp01(p * 3f));
+                    GL11.glPushMatrix();
+                    applyUnitTransform(unit, p);
+                    GL11.glCallList(unit.list + pass);
+                    GL11.glPopMatrix();
+                }
             }
         }
+        setPassState(0, 1f);
+    }
+
+    /** Selected component solid and outlined, everything else as a faint ghost. */
+    private void drawSelection(float time) {
+        for (int pass = 0; pass < 2; pass++) {
+            ForgeHooksClient.setRenderPass(pass);
+            setPassState(pass, 1f);
+            GL11.glCallList(scene.getSelectedList() + pass);
+        }
+
+        GL11.glEnable(GL11.GL_BLEND);
+        GL14.glBlendColor(1, 1, 1, GHOST_ALPHA);
+        GL11.glBlendFunc(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA);
+        GL11.glDepthMask(false);
+        for (int pass = 0; pass < 2; pass++) {
+            ForgeHooksClient.setRenderPass(pass);
+            GL11.glCallList(scene.getGhostList() + pass);
+        }
+        ForgeHooksClient.setRenderPass(-1);
+
+        float pulse = 0.5f + 0.5f * (float) Math.sin(time * 4.0);
+        GL11.glDisable(GL11.GL_TEXTURE_2D);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GL11.glLineWidth(2f);
+        // faint x-ray outlines for selected blocks hidden behind others, bright ones where visible
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.glColor4f(0.90f, 0.71f, 0.31f, 0.25f);
+        GL11.glCallList(scene.getOutlineList());
+        GL11.glEnable(GL11.GL_DEPTH_TEST);
+        GL11.glColor4f(0.90f, 0.71f, 0.31f, 0.55f + 0.45f * pulse);
+        GL11.glCallList(scene.getOutlineList());
+        GL11.glEnable(GL11.GL_TEXTURE_2D);
         setPassState(0, 1f);
     }
 
@@ -641,8 +756,9 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             ForgeHooksClient.setRenderPass(pass);
             for (Long2ObjectMap.Entry<TileEntity> entry : scene.renderedTiles.long2ObjectEntrySet()) {
                 TileEntity tile = entry.getValue();
-                if (!dispatcher.hasSpecialRenderer(tile) || !tile.shouldRenderInPass(pass)) continue;
+                if (!tile.shouldRenderInPass(pass)) continue;
                 long pos = entry.getLongKey();
+                if (scene.getSelection() != null && !scene.selectedBlocks.contains(pos)) continue;
                 AnimUnit unit = scene.units.get(scene.unitOfBlock.get(pos));
                 if (!isUnitVisible(unit)) continue;
                 float p = unitProgress(unit, time);
@@ -689,6 +805,27 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         GL11.glEnable(GL11.GL_TEXTURE_2D);
     }
 
+    /** Ray tracing is only redone when the mouse, the camera or the visible blocks changed. */
+    private MovingObjectPosition pickCached(float time) {
+        pickState[0] = Mouse.getX();
+        pickState[1] = Mouse.getY();
+        pickState[2] = yaw;
+        pickState[3] = pitch;
+        pickState[4] = distance;
+        pickState[5] = centerX;
+        pickState[6] = centerY;
+        pickState[7] = centerZ;
+        pickState[8] = layer;
+        pickState[9] = scene.getSelection() == null ? -1 : scene.selectedBlocks.size();
+        pickState[10] = time < getTotalDuration() + INTRO_DURATION ? time : -1;
+        pickState[11] = sceneW * 10000f + sceneH;
+        if (Arrays.equals(pickState, lastPickState)) return lastPick;
+        System.arraycopy(pickState, 0, lastPickState, 0, pickState.length);
+        return lastPick = pick();
+    }
+
+    private MovingObjectPosition lastPick;
+
     private MovingObjectPosition pick() {
         float winX = Mouse.getX();
         float winY = Mouse.getY();
@@ -709,7 +846,8 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         Vec3 start = Vec3.createVectorHelper(nx + dx * from, ny + dy * from, nz + dz * from);
         Vec3 end = Vec3.createVectorHelper(nx + dx * to, ny + dy * to, nz + dz * to);
 
-        MovingObjectPosition result = scene.world.rayTraceBlocksWithTargetMap(start, end, pickTargets);
+        LongSet targets = scene.getSelection() != null ? scene.selectedBlocks : pickTargets;
+        MovingObjectPosition result = scene.world.rayTraceBlocksWithTargetMap(start, end, targets);
         if (result == null) return null;
         long pos = CoordinatePacker.pack(result.blockX, result.blockY, result.blockZ);
         if (!scene.unitOfBlock.containsKey(pos)) return null;
@@ -740,7 +878,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
     }
 
     private void playLandingSounds(float time) {
-        if (!Config.playSounds || layer >= 0) return;
+        if (!Config.playSounds || layer >= 0 || lastSoundLayer >= scene.getSizeY() - 1) return;
         float landed = time * Config.animationSpeed;
         // a layer "lands" when its first unit finishes falling
         for (AnimUnit unit : scene.units) {
@@ -777,7 +915,12 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
         ItemStack ingredient = getHoveredIngredient(mouseX, mouseY);
         if (ingredient != null) {
-            openNei(ingredient, button == 1);
+            if (button == 0) {
+                toggleSelection(ingredient);
+                playClick();
+            } else if (button == 1) {
+                openNei(ingredient, true);
+            }
             return;
         }
 
@@ -840,6 +983,10 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
     @Override
     protected void keyTyped(char typedChar, int keyCode) {
+        if (keyCode == Keyboard.KEY_ESCAPE && scene.getSelection() != null) {
+            scene.setSelection(null, layer);
+            return;
+        }
         if (keyCode == Keyboard.KEY_ESCAPE || keyCode == mc.gameSettings.keyBindInventory.getKeyCode()) {
             close();
             return;
