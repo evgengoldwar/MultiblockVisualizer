@@ -22,6 +22,18 @@ public class ClientProxy extends CommonProxy {
         "key.multiblockvisualizer.rotate",
         Keyboard.KEY_R,
         "key.categories.multiblockvisualizer");
+    public static final KeyBinding LAYER_UP_KEY = new KeyBinding(
+        "key.multiblockvisualizer.layer_up",
+        Keyboard.KEY_UP,
+        "key.categories.multiblockvisualizer");
+    public static final KeyBinding LAYER_DOWN_KEY = new KeyBinding(
+        "key.multiblockvisualizer.layer_down",
+        Keyboard.KEY_DOWN,
+        "key.categories.multiblockvisualizer");
+    public static final KeyBinding LAYER_ALL_KEY = new KeyBinding(
+        "key.multiblockvisualizer.layer_all",
+        Keyboard.KEY_BACK,
+        "key.categories.multiblockvisualizer");
     public static final KeyBinding DETACH_KEY = new KeyBinding(
         "key.multiblockvisualizer.detach",
         Keyboard.KEY_K,
@@ -39,6 +51,9 @@ public class ClientProxy extends CommonProxy {
         ClientRegistry.registerKeyBinding(OPEN_KEY);
         ClientRegistry.registerKeyBinding(ROTATE_KEY);
         ClientRegistry.registerKeyBinding(DETACH_KEY);
+        ClientRegistry.registerKeyBinding(LAYER_UP_KEY);
+        ClientRegistry.registerKeyBinding(LAYER_DOWN_KEY);
+        ClientRegistry.registerKeyBinding(LAYER_ALL_KEY);
 
         TooltipHandler handler = new TooltipHandler();
         MinecraftForge.EVENT_BUS.register(handler);

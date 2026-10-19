@@ -1,10 +1,12 @@
 package multiblockvisualizer.client.projection;
 
-import static multiblockvisualizer.client.scene.Anim.GL_CONSTANT_COLOR;
-import static multiblockvisualizer.client.scene.Anim.GL_ONE_MINUS_CONSTANT_COLOR;
+import static multiblockvisualizer.client.scene.Anim.GL_CONSTANT_ALPHA;
+import static multiblockvisualizer.client.scene.Anim.GL_ONE_MINUS_CONSTANT_ALPHA;
 import static multiblockvisualizer.client.scene.Anim.UNIT_DURATION;
 import static multiblockvisualizer.client.scene.Anim.applyUnitTransform;
 import static multiblockvisualizer.client.scene.Anim.clamp01;
+
+import java.util.Arrays;
 
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
@@ -82,6 +84,11 @@ public class Projection {
     /** blocks other than hatches/controller used by the structure, any of them is fine on a hatch position */
     private final LongSet casingKeys = new LongOpenHashSet();
     private int correct, wrong, variants, total;
+    /** -1 shows the whole structure, otherwise only this layer (counted from the bottom) is projected */
+    private int layer = -1;
+    private int[] layerTotals = new int[0], layerCorrects = new int[0];
+    /** whether the shown layer was already complete at the last check, so it only advances when finished now */
+    private boolean layerWasDone = true;
     private int ghostList = -1;
     private int ticksToCheck;
     private boolean completed;
@@ -114,6 +121,33 @@ public class Projection {
         return completed;
     }
 
+    public int getLayer() {
+        return layer;
+    }
+
+    public int getLayerCount() {
+        return scene == null ? 0 : scene.getSizeY();
+    }
+
+    public int getLayerCorrect() {
+        return layer >= 0 && layer < layerCorrects.length ? layerCorrects[layer] : 0;
+    }
+
+    public int getLayerTotal() {
+        return layer >= 0 && layer < layerTotals.length ? layerTotals[layer] : 0;
+    }
+
+    /** Shows only one layer so the structure can be built bottom-up, -1 shows everything again. */
+    public void setLayer(int newLayer) {
+        if (state == State.NONE || scene == null) return;
+        newLayer = Math.max(-1, Math.min(getLayerCount() - 1, newLayer));
+        if (newLayer == layer) return;
+        layer = newLayer;
+        // a layer picked by hand stays even if it is already complete
+        layerWasDone = true;
+        if (state == State.PLACED) check();
+    }
+
     /** Takes over a built scene and lets the player place it. */
     public void start(StructureScene scene, ItemStack controller) {
         remove();
@@ -130,6 +164,9 @@ public class Projection {
         }
 
         rotation = getDefaultRotation();
+        layer = -1;
+        layerTotals = new int[scene.getSizeY()];
+        layerCorrects = new int[scene.getSizeY()];
         state = State.PLACING;
     }
 
@@ -242,20 +279,41 @@ public class Projection {
         if (world == null || scene == null) return;
 
         int newCorrect = 0, newWrong = 0, newVariants = 0;
+        Arrays.fill(layerTotals, 0);
+        Arrays.fill(layerCorrects, 0);
         missing.clear();
         for (long pos : scene.world.blockMap.keySet()) {
             Status status = getStatus(world, pos);
             statuses.put(pos, status.ordinal());
+            int posLayer = CoordinatePacker.unpackY(pos) - scene.minY;
+            layerTotals[posLayer]++;
             switch (status) {
-                case CORRECT -> newCorrect++;
+                case CORRECT -> {
+                    newCorrect++;
+                    layerCorrects[posLayer]++;
+                }
                 case WRONG -> newWrong++;
                 case VARIANT -> newVariants++;
-                case MISSING -> missing.add(pos);
+                case MISSING -> {
+                    if (layer < 0 || posLayer == layer) missing.add(pos);
+                }
             }
         }
         correct = newCorrect;
         wrong = newWrong;
         variants = newVariants;
+
+        // building layer by layer: move on once the current one is done
+        boolean layerDone = layer >= 0 && layerCorrects[layer] == layerTotals[layer];
+        if (layerDone && !layerWasDone && layer < getLayerCount() - 1) {
+            layer++;
+            layerWasDone = false; // also skips layers that are already complete
+            mc.getSoundHandler()
+                .playSound(PositionedSoundRecord.func_147674_a(PLACE_SOUND, 1.6f));
+            check();
+            return;
+        }
+        layerWasDone = layerDone;
 
         if (!missing.equals(ghostBlocks)) {
             ghostBlocks.clear();
@@ -345,12 +403,14 @@ public class Projection {
             GL11.glTranslatef(-StructureScene.PLACE_X - 0.5f, -StructureScene.PLACE_Y - 0.5f, -StructureScene.PLACE_Z - 0.5f);
 
             GL11.glEnable(GL11.GL_BLEND);
-            GL11.glBlendFunc(GL_CONSTANT_COLOR, GL_ONE_MINUS_CONSTANT_COLOR);
-            GL11.glDepthMask(false);
+            GL11.glBlendFunc(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA);
+            GL11.glDepthFunc(GL11.GL_LEQUAL);
+            // real blocks win where a ghost face lies exactly on top of them
+            GL11.glEnable(GL11.GL_POLYGON_OFFSET_FILL);
+            GL11.glPolygonOffset(1f, 2f);
 
             if (state == State.PLACING) {
-                setHologramColor(0.35f + 0.15f * pulse);
-                drawLists(scene.getFullList());
+                drawHologram(scene.getFullList(), 0.35f + 0.1f * pulse);
             } else if (time < lastUnitStart + UNIT_DURATION / Config.animationSpeed) {
                 drawBuildAnimation(time);
             } else {
@@ -358,11 +418,10 @@ public class Projection {
                     ghostList = GLAllocation.generateDisplayLists(2);
                     scene.compileBlocks(ghostList, ghostBlocks, true);
                 }
-                if (ghostList >= 0) {
-                    setHologramColor(0.38f + 0.12f * pulse);
-                    drawLists(ghostList);
-                }
+                if (ghostList >= 0) drawHologram(ghostList, 0.4f + 0.1f * pulse);
             }
+            GL11.glDisable(GL11.GL_POLYGON_OFFSET_FILL);
+            GL11.glDepthMask(false);
             GL11.glPopMatrix();
 
             GL11.glDisable(GL11.GL_TEXTURE_2D);
@@ -385,9 +444,18 @@ public class Projection {
         return mc.thePlayer != null && mc.thePlayer.isSneaking();
     }
 
-    private static void setHologramColor(float strength) {
-        // constant colour blending: a cool blue tinted, see-through copy of the textures
-        GL14.glBlendColor(0.9f * strength, 1.2f * strength, 1.6f * strength, 1f);
+    /**
+     * Draws the lists as one see-through volume: a depth-only pass first, so only the nearest ghost surface gets
+     * colour and the faces behind/between ghost blocks do not shine through each other.
+     */
+    private static void drawHologram(int list, float alpha) {
+        GL11.glColorMask(false, false, false, false);
+        GL11.glDepthMask(true);
+        drawLists(list);
+        GL11.glColorMask(true, true, true, true);
+        GL11.glDepthMask(false);
+        GL14.glBlendColor(1f, 1f, 1f, alpha);
+        drawLists(list);
     }
 
     private static void drawLists(int list) {
@@ -400,12 +468,12 @@ public class Projection {
 
     private void drawBuildAnimation(float time) {
         for (AnimUnit unit : scene.units) {
+            if (layer >= 0 && unit.y - scene.minY != layer) continue;
             float p = (time - unit.startTime) * Config.animationSpeed / UNIT_DURATION;
             if (p <= 0) continue;
-            setHologramColor(0.45f * clamp01(p * 2.5f));
             GL11.glPushMatrix();
             if (p < 1) applyUnitTransform(unit, p);
-            drawLists(unit.list);
+            drawHologram(unit.list, 0.45f * clamp01(p * 2.5f));
             GL11.glPopMatrix();
         }
     }

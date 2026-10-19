@@ -48,6 +48,12 @@ public class ProjectionHandler {
         }
         if (mc.currentScreen == null) {
             while (ClientProxy.ROTATE_KEY.isPressed()) projection.rotate();
+            // from "all layers" the first step goes to the bottom layer, where building starts
+            while (ClientProxy.LAYER_UP_KEY.isPressed()) projection.setLayer(projection.getLayer() + 1);
+            while (ClientProxy.LAYER_DOWN_KEY.isPressed()) {
+                if (projection.getLayer() > 0) projection.setLayer(projection.getLayer() - 1);
+            }
+            while (ClientProxy.LAYER_ALL_KEY.isPressed()) projection.setLayer(-1);
             while (ClientProxy.DETACH_KEY.isPressed()) {
                 if (projection.getState() == Projection.State.PLACED && !GuiScreen.isShiftKeyDown()) {
                     projection.detach();
@@ -98,6 +104,14 @@ public class ProjectionHandler {
             hints.add(I18n.format("multiblockvisualizer.projection.cancel", detach));
         } else {
             hints.add(I18n.format("multiblockvisualizer.projection.rotate", rotate));
+            hints.add(
+                I18n.format(
+                    "multiblockvisualizer.projection.layers",
+                    key(ClientProxy.LAYER_UP_KEY),
+                    key(ClientProxy.LAYER_DOWN_KEY)));
+            if (projection.getLayer() >= 0) {
+                hints.add(I18n.format("multiblockvisualizer.projection.layer_all", key(ClientProxy.LAYER_ALL_KEY)));
+            }
             hints.add(I18n.format("multiblockvisualizer.projection.detach", detach));
             hints.add(I18n.format("multiblockvisualizer.projection.remove", detach));
         }
@@ -105,6 +119,7 @@ public class ProjectionHandler {
         int height = 24 + (placing ? 0 : 26) + hints.size() * 10 + 4;
         if (!placing && projection.getWrong() > 0) height += 10;
         if (!placing && projection.getVariants() > 0) height += 10;
+        if (!placing && projection.getLayer() >= 0) height += 18;
         int x = 6;
         int y = event.resolution.getScaledHeight() / 2 - height / 2;
 
@@ -152,6 +167,26 @@ public class ProjectionHandler {
             // soft highlight on the upper half of the bar
             Gui.drawRect(barX, lineY, barX + fill, lineY + 2, 0x40FFFFFF);
             lineY += 12;
+
+            if (projection.getLayer() >= 0) {
+                // progress of the layer being built
+                int layerTotal = Math.max(1, projection.getLayerTotal());
+                float layerProgress = projection.getLayerCorrect() / (float) layerTotal;
+                font.drawStringWithShadow(
+                    I18n.format(
+                        "multiblockvisualizer.projection.layer",
+                        projection.getLayer() + 1,
+                        projection.getLayerCount(),
+                        projection.getLayerCorrect(),
+                        projection.getLayerTotal()),
+                    x + 5,
+                    lineY,
+                    0x9AD0FF);
+                lineY += 10;
+                Gui.drawRect(barX, lineY, barX + barW, lineY + 3, 0x60000000);
+                Gui.drawRect(barX, lineY, barX + Math.round(barW * layerProgress), lineY + 3, 0xFF7AB8F0);
+                lineY += 8;
+            }
 
             if (projection.getWrong() > 0) {
                 font.drawStringWithShadow(
