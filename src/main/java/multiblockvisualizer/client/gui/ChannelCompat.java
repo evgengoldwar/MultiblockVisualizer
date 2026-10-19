@@ -1,8 +1,12 @@
 package multiblockvisualizer.client.gui;
 
+import java.lang.reflect.Method;
+
 import com.gtnewhorizon.structurelib.structure.IChannelDefinition;
 
 import blockrenderer6343.client.utils.ConstructableData;
+import it.unimi.dsi.fastutil.objects.Object2IntMap;
+import it.unimi.dsi.fastutil.objects.Object2IntMaps;
 
 /**
  * Channel definitions (minimum value, normalisation) only exist in newer StructureLib/BlockRenderer6343. Everything
@@ -27,6 +31,22 @@ final class ChannelCompat {
             }
         }
         return available;
+    }
+
+    /**
+     * Channel name -> highest tier. The getter was renamed: getChannelData() in old BlockRenderer6343 (1.4.21),
+     * getChannelMaxTierMap() later.
+     */
+    @SuppressWarnings("unchecked")
+    static Object2IntMap<String> getChannelMaxTiers(ConstructableData data) {
+        for (String name : new String[] { "getChannelMaxTierMap", "getChannelData" }) {
+            try {
+                Method method = ConstructableData.class.getMethod(name);
+                Object result = method.invoke(data);
+                if (result instanceof Object2IntMap) return (Object2IntMap<String>) result;
+            } catch (Throwable ignored) {}
+        }
+        return Object2IntMaps.emptyMap();
     }
 
     /** @return the channel's definition, or null when it has none or the API is missing */

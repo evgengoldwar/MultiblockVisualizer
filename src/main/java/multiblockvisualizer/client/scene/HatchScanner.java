@@ -2,6 +2,8 @@ package multiblockvisualizer.client.scene;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -157,7 +159,7 @@ public class HatchScanner {
     private static int getDot(IConstructable controller, IStructureElement<Object> element) {
         return cachedDots.computeIfAbsent(element, e -> {
             IStructureElement<?> match = StructureHacks.getFirstMatchingElement(HATCH_ELEMENT, controller, element);
-            return match == null ? NO_DOT : getHatchBuilder(match).getHint();
+            return match == null ? NO_DOT : readHintDot(getHatchBuilder(match));
         });
     }
 
@@ -169,12 +171,46 @@ public class HatchScanner {
         }
     }
 
+    // HatchElementBuilder#getHint()/getHatchItemTypeName() only exist in newer GT (not in e.g. 5.09.54.114), so both
+    // are read reflectively: the hint dot field exists in every version, the type name moved between methods.
+
+    private static int readHintDot(HatchElementBuilder<?> builder) {
+        try {
+            Field field = HatchElementBuilder.class.getDeclaredField("mHint");
+            field.setAccessible(true);
+            int hint = field.getInt(builder);
+            return hint > 0 ? hint : NO_DOT;
+        } catch (Throwable t) {
+            return NO_DOT;
+        }
+    }
+
+    private static String readHatchTypeName(IStructureElement<?> hatchElement) {
+        try {
+            // newer GT: public on the builder
+            Method method = HatchElementBuilder.class.getMethod("getHatchItemTypeName");
+            return (String) method.invoke(getHatchBuilder(hatchElement));
+        } catch (Throwable ignored) {}
+        // older GT: a private method of the built element, getHatchItemTypeName() or getHint()
+        for (String name : new String[] { "getHatchItemTypeName", "getHint" }) {
+            try {
+                Method method = hatchElement.getClass()
+                    .getDeclaredMethod(name);
+                method.setAccessible(true);
+                Object result = method.invoke(hatchElement);
+                if (result instanceof String text) return text;
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
     private static String getFallbackHint(IConstructable controller, IStructureElement<Object> element) {
         if (element == null) return "";
         IStructureElement<Object> hatch = StructureHacks.getFirstMatchingElement(HATCH_ELEMENT, controller, element);
         if (hatch == null) return "";
 
-        String hint = getHatchBuilder(hatch).getHatchItemTypeName();
+        String hint = readHatchTypeName(hatch);
+        if (hint == null || hint.isEmpty()) return "";
         StringBuilder builder = new StringBuilder(hint);
         if (builder.indexOf("of type") == -1) return hint;
 
