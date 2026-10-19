@@ -306,7 +306,7 @@ public class Projection {
     /** Hint dots of the hatch positions still open (grey = any hatch, for multis without hint dots). */
     public List<HatchLegend> getHatchLegend() {
         List<HatchLegend> legend = new ArrayList<>();
-        if (scene == null || !Config.projectionHatches) return legend;
+        if (scene == null || !showHatches) return legend;
         SortedSet<Integer> dots = new TreeSet<>();
         for (long pos : hatchSlots) {
             if (hatchFilled.contains(pos) || !isInShownLayer(pos)) continue;
@@ -324,6 +324,17 @@ public class Projection {
                     dot + (hint == null ? "" : ": " + hint)));
         }
         return legend;
+    }
+
+    /** Hatch positions outlined in their hint dot colour, toggled with a key, off by default. */
+    private boolean showHatches;
+
+    public void toggleHatches() {
+        showHatches = !showHatches;
+    }
+
+    public boolean isShowingHatches() {
+        return showHatches;
     }
 
     /** Called every tick with the item in the player's hand. */
@@ -627,7 +638,8 @@ public class Projection {
         double camY = view.lastTickPosY + (view.posY - view.lastTickPosY) * partialTicks;
         double camZ = view.lastTickPosZ + (view.posZ - view.lastTickPosZ) * partialTicks;
         float time = (System.nanoTime() - placedAt) / 1e9f;
-        float pulse = 0.5f + 0.5f * (float) Math.sin(System.nanoTime() / 1e9 * 3.0);
+        // mini blocks are already small, keep their highlight steady instead of pulsing
+        float pulse = Config.projectionMiniBlocks ? 0.5f : 0.5f + 0.5f * (float) Math.sin(System.nanoTime() / 1e9 * 3.0);
 
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         GL11.glPushMatrix();
@@ -769,7 +781,7 @@ public class Projection {
         }
 
         // hatch positions still without a hatch, in their hint dot colour (grey: any hatch)
-        if (Config.projectionHatches) {
+        if (showHatches) {
             for (long pos : hatchSlots) {
                 if (hatchFilled.contains(pos) || !isInShownLayer(pos)) continue;
                 int dot = scene.hatches.dotForPos.get(pos);
@@ -807,7 +819,8 @@ public class Projection {
     /** Translucent filled box with an outline, in the current coordinate space. */
     private static void drawBox(double x, double y, double z, float r, float g, float b, float fillAlpha,
         float lineAlpha) {
-        double e = 0.006;
+        // with mini blocks the box hugs the small block in the middle of its place
+        double e = 0.006 - (1 - getBlockScale()) / 2;
         double x0 = x - e, y0 = y - e, z0 = z - e, x1 = x + 1 + e, y1 = y + 1 + e, z1 = z + 1 + e;
         Tessellator t = Tessellator.instance;
         t.startDrawingQuads();

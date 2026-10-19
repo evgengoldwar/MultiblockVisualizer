@@ -365,7 +365,6 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         });
 
         addOption("projectionFarPlace", () -> Config.projectionFarPlace, v -> Config.projectionFarPlace = v);
-        addOption("projectionHatches", () -> Config.projectionHatches, v -> Config.projectionHatches = v);
 
         FlatButton done = new FlatButton(() -> I18n.format("gui.done"), () -> optionsOpen = false).fixedWidth(80);
         optionButtons.add(done);

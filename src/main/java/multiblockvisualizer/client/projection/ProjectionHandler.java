@@ -51,6 +51,7 @@ public class ProjectionHandler {
         if (mc.currentScreen == null) {
             while (ClientProxy.ROTATE_KEY.isPressed()) projection.rotate();
             while (ClientProxy.POSE_KEY.isPressed()) projection.cyclePose();
+            while (ClientProxy.HATCHES_KEY.isPressed()) projection.toggleHatches();
             // cycles all -> bottom ... top -> all, backwards all -> top ... bottom -> all
             while (ClientProxy.LAYER_UP_KEY.isPressed()) stepLayer(1);
             while (ClientProxy.LAYER_DOWN_KEY.isPressed()) stepLayer(-1);
@@ -131,6 +132,11 @@ public class ProjectionHandler {
             if (projection.getLayer() >= 0) {
                 hints.add(I18n.format("multiblockvisualizer.projection.layer_all", key(ClientProxy.LAYER_ALL_KEY)));
             }
+            hints.add(
+                I18n.format(
+                    projection.isShowingHatches() ? "multiblockvisualizer.projection.hatches_hide"
+                        : "multiblockvisualizer.projection.hatches_show",
+                    key(ClientProxy.HATCHES_KEY)));
             hints.add(I18n.format("multiblockvisualizer.projection.detach", detach));
             hints.add(I18n.format("multiblockvisualizer.projection.remove", detach));
         }
