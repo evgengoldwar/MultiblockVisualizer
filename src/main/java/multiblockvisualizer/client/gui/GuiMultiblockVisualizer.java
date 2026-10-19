@@ -21,7 +21,6 @@ import net.minecraft.client.audio.PositionedSoundRecord;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.ScaledResolution;
-import net.minecraft.client.renderer.GLAllocation;
 import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.RenderGlobal;
 import net.minecraft.client.renderer.RenderHelper;
@@ -60,6 +59,7 @@ import multiblockvisualizer.MultiblockVisualizer;
 import multiblockvisualizer.client.StructureHelper;
 import multiblockvisualizer.client.projection.Projection;
 import multiblockvisualizer.client.scene.HatchScanner;
+import multiblockvisualizer.client.scene.RenderLists;
 import multiblockvisualizer.client.scene.StructureScene;
 import multiblockvisualizer.client.scene.StructureScene.AnimUnit;
 
@@ -174,7 +174,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
     }
 
     private void releaseFloor() {
-        if (floorList >= 0) GLAllocation.deleteDisplayLists(floorList);
+        RenderLists.free(floorList);
         floorList = -1;
     }
 
@@ -844,13 +844,11 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             return;
         }
         if (floorList < 0 || floorListY != y) {
-            if (floorList < 0) floorList = GLAllocation.generateDisplayLists(1);
+            if (floorList < 0) floorList = RenderLists.allocate(1);
             floorListY = y;
-            GL11.glNewList(floorList, GL11.GL_COMPILE);
-            drawFloorGeometry(y, 1f);
-            GL11.glEndList();
+            RenderLists.record(floorList, () -> drawFloorGeometry(y, 1f));
         }
-        GL11.glCallList(floorList);
+        RenderLists.call(floorList);
     }
 
     private void drawFloorGeometry(float y, float alpha) {
@@ -915,19 +913,19 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             setPassState(pass, 1f);
             if (layer < 0 && finished) {
                 // one call for the whole structure, hidden faces culled
-                GL11.glCallList(scene.getFullList() + pass);
+                RenderLists.call(scene.getFullList() + pass);
                 continue;
             }
 
             // landed layers in one call each, settled units of the layers still building one by one
             for (int l = fromLayer; l <= toLayer; l++) {
                 if (time >= scene.layerLastStart[l] + duration) {
-                    GL11.glCallList(scene.getLayerList(l) + pass);
+                    RenderLists.call(scene.getLayerList(l) + pass);
                     continue;
                 }
                 for (int i = scene.layerUnitStart[l]; i < scene.layerUnitStart[l + 1]; i++) {
                     AnimUnit unit = scene.units.get(i);
-                    if (unitProgress(unit, time) >= 1) GL11.glCallList(unit.list + pass);
+                    if (unitProgress(unit, time) >= 1) RenderLists.call(unit.list + pass);
                 }
             }
 
@@ -941,7 +939,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
                     setPassState(pass, clamp01(p * 3f));
                     GL11.glPushMatrix();
                     applyUnitTransform(unit, p);
-                    GL11.glCallList(unit.list + pass);
+                    RenderLists.call(unit.list + pass);
                     GL11.glPopMatrix();
                 }
             }
@@ -954,7 +952,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         for (int pass = 0; pass < 2; pass++) {
             ForgeHooksClient.setRenderPass(pass);
             setPassState(pass, 1f);
-            GL11.glCallList(scene.getSelectedList() + pass);
+            RenderLists.call(scene.getSelectedList() + pass);
         }
 
         GL11.glEnable(GL11.GL_BLEND);
@@ -963,7 +961,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         GL11.glDepthMask(false);
         for (int pass = 0; pass < 2; pass++) {
             ForgeHooksClient.setRenderPass(pass);
-            GL11.glCallList(scene.getGhostList() + pass);
+            RenderLists.call(scene.getGhostList() + pass);
         }
         ForgeHooksClient.setRenderPass(-1);
 
@@ -974,10 +972,10 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         // faint x-ray outlines for highlighted blocks hidden behind others, bright pulsing ones where visible
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL14.glBlendColor(1, 1, 1, 0.25f);
-        GL11.glCallList(scene.getOutlineList());
+        RenderLists.call(scene.getOutlineList());
         GL11.glEnable(GL11.GL_DEPTH_TEST);
         GL14.glBlendColor(1, 1, 1, 0.55f + 0.45f * pulse);
-        GL11.glCallList(scene.getOutlineList());
+        RenderLists.call(scene.getOutlineList());
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         setPassState(0, 1f);
     }

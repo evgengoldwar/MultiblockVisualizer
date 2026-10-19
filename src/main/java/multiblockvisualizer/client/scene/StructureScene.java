@@ -10,7 +10,6 @@ import java.util.function.Predicate;
 
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.GLAllocation;
 import net.minecraft.client.renderer.RenderBlocks;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher;
@@ -350,7 +349,7 @@ public class StructureScene {
     public void compile() {
         if (isCompiled() || units.isEmpty()) return;
 
-        listBase = GLAllocation.generateDisplayLists(units.size() * 2);
+        listBase = RenderLists.allocate(units.size() * 2);
         for (int i = 0; i < units.size(); i++) {
             AnimUnit unit = units.get(i);
             unit.list = listBase + i * 2;
@@ -359,14 +358,14 @@ public class StructureScene {
         }
 
         int layers = getSizeY();
-        layerListBase = GLAllocation.generateDisplayLists(layers * 2);
+        layerListBase = RenderLists.allocate(layers * 2);
         for (int l = 0; l < layers; l++) {
             LongArrayList blocks = new LongArrayList();
             for (int i = layerUnitStart[l]; i < layerUnitStart[l + 1]; i++) blocks.addAll(units.get(i).blocks);
             compileBlocks(layerListBase + l * 2, blocks, true);
         }
 
-        fullList = GLAllocation.generateDisplayLists(2);
+        fullList = RenderLists.allocate(2);
         compileBlocks(fullList, world.blockMap.keySet(), false);
 
         // the GL side of an active highlight was dropped together with everything else
@@ -391,6 +390,18 @@ public class StructureScene {
      *              structure stay visible between the outer ones
      */
     public void compileBlocks(int list, LongIterable blocks, boolean allFaces, float scale) {
+        // a copy: callers keep changing their sets, and in immediate mode the drawing runs again every frame
+        LongArrayList copy = new LongArrayList();
+        for (long pos : blocks) copy.add(pos);
+        TrackedDummyWorld blockWorld = world;
+        for (int pass = 0; pass < 2; pass++) {
+            int renderPass = pass;
+            RenderLists.record(list + pass, () -> drawBlocks(blockWorld, copy, renderPass, allFaces, scale));
+        }
+    }
+
+    private static void drawBlocks(TrackedDummyWorld world, LongArrayList blocks, int pass, boolean allFaces,
+        float scale) {
         Minecraft mc = Minecraft.getMinecraft();
         RenderBlocks renderBlocks = new RenderBlocks(world);
         renderBlocks.renderAllFaces = allFaces;
@@ -401,48 +412,41 @@ public class StructureScene {
         // rendered coordinates, so point the player at the preview world while the blocks are tessellated
         World playerWorld = mc.thePlayer != null ? mc.thePlayer.worldObj : null;
         if (mc.thePlayer != null) mc.thePlayer.worldObj = world;
+        ForgeHooksClient.setRenderPass(pass);
+        tessellator.startDrawingQuads();
+        tessellator.setBrightness(15 << 20 | 15 << 4);
         try {
-            for (int pass = 0; pass < 2; pass++) {
-                ForgeHooksClient.setRenderPass(pass);
-                GL11.glNewList(list + pass, GL11.GL_COMPILE);
-                tessellator.startDrawingQuads();
-                tessellator.setBrightness(15 << 20 | 15 << 4);
-                try {
-                    for (long pos : blocks) {
-                        Block block = world.blockMap.get(pos);
-                        if (block == null || !block.canRenderInPass(pass)) continue;
-                        renderBlocks.setRenderBounds(0, 0, 0, 1, 1, 1);
-                        int x = CoordinatePacker.unpackX(pos), y = CoordinatePacker.unpackY(pos),
-                            z = CoordinatePacker.unpackZ(pos);
-                        if (scale != 1f) {
-                            // one batch per block, the recorded matrix shrinks it around its centre
-                            tessellator.draw();
-                            GL11.glPushMatrix();
-                            GL11.glTranslatef(x + 0.5f, y + 0.5f, z + 0.5f);
-                            GL11.glScalef(scale, scale, scale);
-                            GL11.glTranslatef(-x - 0.5f, -y - 0.5f, -z - 0.5f);
-                            tessellator.startDrawingQuads();
-                            tessellator.setBrightness(15 << 20 | 15 << 4);
-                        }
-                        try {
-                            renderBlocks.renderBlockByRenderType(block, x, y, z);
-                        } catch (Throwable t) {
-                            MultiblockVisualizer.LOG.warn("Failed to render a preview block", t);
-                        }
-                        if (scale != 1f) {
-                            tessellator.draw();
-                            GL11.glPopMatrix();
-                            tessellator.startDrawingQuads();
-                            tessellator.setBrightness(15 << 20 | 15 << 4);
-                        }
-                    }
-                } finally {
+            for (long pos : blocks) {
+                Block block = world.blockMap.get(pos);
+                if (block == null || !block.canRenderInPass(pass)) continue;
+                renderBlocks.setRenderBounds(0, 0, 0, 1, 1, 1);
+                int x = CoordinatePacker.unpackX(pos), y = CoordinatePacker.unpackY(pos),
+                    z = CoordinatePacker.unpackZ(pos);
+                if (scale != 1f) {
+                    // one batch per block, the matrix shrinks it around its centre
                     tessellator.draw();
-                    tessellator.setTranslation(0, 0, 0);
-                    GL11.glEndList();
+                    GL11.glPushMatrix();
+                    GL11.glTranslatef(x + 0.5f, y + 0.5f, z + 0.5f);
+                    GL11.glScalef(scale, scale, scale);
+                    GL11.glTranslatef(-x - 0.5f, -y - 0.5f, -z - 0.5f);
+                    tessellator.startDrawingQuads();
+                    tessellator.setBrightness(15 << 20 | 15 << 4);
+                }
+                try {
+                    renderBlocks.renderBlockByRenderType(block, x, y, z);
+                } catch (Throwable t) {
+                    MultiblockVisualizer.LOG.warn("Failed to render a preview block", t);
+                }
+                if (scale != 1f) {
+                    tessellator.draw();
+                    GL11.glPopMatrix();
+                    tessellator.startDrawingQuads();
+                    tessellator.setBrightness(15 << 20 | 15 << 4);
                 }
             }
         } finally {
+            tessellator.draw();
+            tessellator.setTranslation(0, 0, 0);
             if (mc.thePlayer != null) mc.thePlayer.worldObj = playerWorld;
             ForgeHooksClient.setRenderPass(-1);
             mc.gameSettings.ambientOcclusion = savedAo;
@@ -450,16 +454,16 @@ public class StructureScene {
     }
 
     public void releaseGl() {
-        if (listBase >= 0) GLAllocation.deleteDisplayLists(listBase);
-        if (layerListBase >= 0) GLAllocation.deleteDisplayLists(layerListBase);
-        if (fullList >= 0) GLAllocation.deleteDisplayLists(fullList);
+        RenderLists.free(listBase);
+        RenderLists.free(layerListBase);
+        RenderLists.free(fullList);
         listBase = layerListBase = fullList = -1;
         for (AnimUnit unit : units) unit.list = -1;
         releaseSelection();
     }
 
     private void releaseSelection() {
-        if (selectionBase >= 0) GLAllocation.deleteDisplayLists(selectionBase);
+        RenderLists.free(selectionBase);
         selectionBase = -1;
     }
 
@@ -614,23 +618,24 @@ public class StructureScene {
             }
         }
 
-        selectionBase = GLAllocation.generateDisplayLists(5);
+        selectionBase = RenderLists.allocate(5);
         compileBlocks(selectionBase, selected, true);
         compileBlocks(selectionBase + 2, ghosts, true);
 
         // outlines of the highlighted blocks, alpha comes from the blend colour so they can pulse
-        GL11.glNewList(selectionBase + 4, GL11.GL_COMPILE);
-        Tessellator tessellator = Tessellator.instance;
-        tessellator.startDrawing(GL11.GL_LINES);
-        double e = 0.004;
-        for (long pos : selected) {
-            tessellator.setColorOpaque_I(getOutlineColor(pos));
-            double x = CoordinatePacker.unpackX(pos), y = CoordinatePacker.unpackY(pos),
-                z = CoordinatePacker.unpackZ(pos);
-            addBoxLines(tessellator, x - e, y - e, z - e, x + 1 + e, y + 1 + e, z + 1 + e);
-        }
-        tessellator.draw();
-        GL11.glEndList();
+        LongArrayList outlined = new LongArrayList(selected);
+        RenderLists.record(selectionBase + 4, () -> {
+            Tessellator tessellator = Tessellator.instance;
+            tessellator.startDrawing(GL11.GL_LINES);
+            double e = 0.004;
+            for (long pos : outlined) {
+                tessellator.setColorOpaque_I(getOutlineColor(pos));
+                double x = CoordinatePacker.unpackX(pos), y = CoordinatePacker.unpackY(pos),
+                    z = CoordinatePacker.unpackZ(pos);
+                addBoxLines(tessellator, x - e, y - e, z - e, x + 1 + e, y + 1 + e, z + 1 + e);
+            }
+            tessellator.draw();
+        });
     }
 
     /** solid/translucent lists of the highlighted blocks */
