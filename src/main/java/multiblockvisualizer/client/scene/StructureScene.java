@@ -84,6 +84,7 @@ public class StructureScene {
     public String error;
 
     public final HatchScanner hatches = new HatchScanner();
+    private boolean cutMode;
     private IConstructable constructable;
     private ItemStack trigger;
     private ItemStack controllerStack;
@@ -564,6 +565,26 @@ public class StructureScene {
         if (isHighlightActive() && layer != selectionLayer) applyHighlight(layer);
     }
 
+    /**
+     * Cut view: a selected layer shows everything from the bottom up to it instead of that layer alone, so the
+     * inside of the structure can be looked at level by level.
+     */
+    public void setCutMode(boolean cut) {
+        if (cut == cutMode) return;
+        cutMode = cut;
+        if (isHighlightActive()) applyHighlight(selectionLayer);
+    }
+
+    public boolean isCutMode() {
+        return cutMode;
+    }
+
+    public boolean isInLayer(long pos, int layer) {
+        if (layer < 0) return true;
+        int y = CoordinatePacker.unpackY(pos);
+        return cutMode ? y <= minY + layer : y == minY + layer;
+    }
+
     private boolean isHighlighted(long pos) {
         if (hatchHighlight) return hatches.dotForPos.containsKey(pos);
         return sameItem(getBlockStack(pos), selectionStack);
@@ -583,7 +604,7 @@ public class StructureScene {
         LongArrayList ghosts = new LongArrayList();
         selectedBlocks.clear();
         for (long pos : world.blockMap.keySet()) {
-            if (layer >= 0 && CoordinatePacker.unpackY(pos) != minY + layer) continue;
+            if (!isInLayer(pos, layer)) continue;
             if (isHighlighted(pos)) {
                 selected.add(pos);
                 selectedBlocks.add(pos);
@@ -637,13 +658,13 @@ public class StructureScene {
      */
     public List<ItemStack> getIngredients(int layer) {
         if (blockCount == 0) return Collections.emptyList();
-        world.setVisibleYLevel(layer < 0 ? -1 : minY + layer);
+        world.setVisibleYLevel(layer < 0 || cutMode ? -1 : minY + layer);
 
         List<ItemStack> controllers = new ArrayList<>();
         List<ItemStack> blocks = new ArrayList<>();
         List<ItemStack> hatchStacks = new ArrayList<>();
         for (long pos : world.blockMap.keySet()) {
-            if (layer >= 0 && CoordinatePacker.unpackY(pos) != minY + layer) continue;
+            if (!isInLayer(pos, layer)) continue;
             ItemStack stack = getBlockStack(pos);
             if (stack == null) continue;
 

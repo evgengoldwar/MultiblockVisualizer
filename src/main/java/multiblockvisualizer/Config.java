@@ -20,6 +20,7 @@ public class Config {
     public static boolean projectionHints = true;
     public static boolean projectionMiniBlocks = false;
     public static boolean projectionFarPlace = false;
+    public static boolean projectionHatches = true;
 
     private static Configuration configuration;
 
@@ -76,6 +77,12 @@ public class Config {
             projectionFarPlace,
             "Place the projection at any distance (far blocks, or in the air when nothing is in sight)");
 
+        projectionHatches = configuration.getBoolean(
+            "hatches",
+            PROJECTION,
+            projectionHatches,
+            "Outline the hatch positions of the projection in the colour of their hint dot");
+
         if (configuration.hasChanged()) {
             configuration.save();
         }
@@ -98,6 +105,8 @@ public class Config {
             .set(projectionMiniBlocks);
         configuration.get(PROJECTION, "farPlace", false)
             .set(projectionFarPlace);
+        configuration.get(PROJECTION, "hatches", true)
+            .set(projectionHatches);
         configuration.save();
     }
 }
