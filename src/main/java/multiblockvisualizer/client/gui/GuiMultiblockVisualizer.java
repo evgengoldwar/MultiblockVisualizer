@@ -1,6 +1,5 @@
 package multiblockvisualizer.client.gui;
 
-import java.nio.DoubleBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
@@ -81,7 +80,6 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
     private StructureSettings settings;
     private final List<FlatButton> settingButtons = new ArrayList<>();
-    private boolean showHatches;
     private int layer = -1;
     private List<ItemStack> ingredients = Collections.emptyList();
     private int ingredientScroll;
@@ -210,7 +208,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
     }
 
     private void replay() {
-        scene.setSelection(null, layer);
+        scene.clearHighlight();
         animStart = System.nanoTime();
         lastSoundLayer = -1;
     }
@@ -228,6 +226,12 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         // the highlight shows the finished structure
         skipAnimation();
         scene.setSelection(stack, layer);
+    }
+
+    /** Same look as a component highlight, only every hatch position outlined in its hint dot colour. */
+    private void toggleHatches() {
+        if (!scene.isHatchHighlight()) skipAnimation();
+        scene.setHatchHighlight(!scene.isHatchHighlight(), layer);
     }
 
     private void skipAnimation() {
@@ -277,9 +281,9 @@ public class GuiMultiblockVisualizer extends GuiScreen {
                     .tooltip(() -> I18n.format("multiblockvisualizer.gui.layer.tooltip")));
         buttons.add(new FlatButton(() -> ">", () -> setLayer(layer + 1)).fixedWidth(18));
         buttons.add(
-            new FlatButton(() -> I18n.format("multiblockvisualizer.gui.hatches"), () -> showHatches = !showHatches)
+            new FlatButton(() -> I18n.format("multiblockvisualizer.gui.hatches"), this::toggleHatches)
                 .visibleWhen(() -> !scene.hatches.groups.isEmpty())
-                .activeWhen(() -> showHatches)
+                .activeWhen(() -> scene.isHatchHighlight())
                 .tooltip(() -> I18n.format("multiblockvisualizer.gui.hatches.tooltip")));
         buttons.add(
             new FlatButton(() -> I18n.format("multiblockvisualizer.gui.rotate"), () -> autoRotate = !autoRotate)
@@ -327,7 +331,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         if (newLayer == layer) return;
         layer = newLayer;
         refreshIngredients();
-        if (scene.getSelection() != null) scene.setSelection(scene.getSelection(), layer);
+        scene.setHighlightLayer(layer);
     }
 
     private static final int SETTING_ROW = 17;
@@ -371,8 +375,10 @@ public class GuiMultiblockVisualizer extends GuiScreen {
     /** Rebuilds the structure with the current tier/channels, without replaying the build animation. */
     private void applySettings() {
         ItemStack selection = scene.getSelection();
+        boolean hatches = scene.isHatchHighlight();
         rebuild(false, false);
         if (selection != null) scene.setSelection(selection, layer);
+        if (hatches) scene.setHatchHighlight(true, layer);
         // the structure may have grown, keep it in frame
         distance = Math.max(distance, fitDistance());
         centerY = scene.minY + scene.getSizeY() / 2f;
@@ -418,7 +424,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         for (FlatButton button : buttons) button.draw(fontRendererObj, mouseX, mouseY);
         if (!scene.isEmpty()) {
             for (FlatButton button : settingButtons) button.draw(fontRendererObj, mouseX, mouseY);
-            if (showHatches) drawHatchLegend();
+            if (scene.isHatchHighlight()) drawHatchLegend();
         }
         closeButton.draw(fontRendererObj, mouseX, mouseY);
 
@@ -655,7 +661,6 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             drawFloor(intro);
             drawBlocks(time);
             drawTileEntities(time, partialTicks);
-            if (showHatches) drawHatchOverlay(time);
 
             if (isInScene(mouseX, mouseY) && dragButton < 0) {
                 hovered = pickCached(time);
@@ -748,7 +753,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         GL11.glEnable(GL11.GL_ALPHA_TEST);
         GL11.glAlphaFunc(GL11.GL_GREATER, 0.1f);
 
-        if (scene.getSelection() != null) {
+        if (scene.isHighlightActive()) {
             drawSelection(time);
             return;
         }
@@ -817,14 +822,14 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
         float pulse = 0.5f + 0.5f * (float) Math.sin(time * 4.0);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
-        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
         GL11.glLineWidth(2f);
-        // faint x-ray outlines for selected blocks hidden behind others, bright ones where visible
+        // outline colours are baked in (gold, or the hint dot colour for hatches), the blend colour sets alpha:
+        // faint x-ray outlines for highlighted blocks hidden behind others, bright pulsing ones where visible
         GL11.glDisable(GL11.GL_DEPTH_TEST);
-        GL11.glColor4f(0.90f, 0.71f, 0.31f, 0.25f);
+        GL14.glBlendColor(1, 1, 1, 0.25f);
         GL11.glCallList(scene.getOutlineList());
         GL11.glEnable(GL11.GL_DEPTH_TEST);
-        GL11.glColor4f(0.90f, 0.71f, 0.31f, 0.55f + 0.45f * pulse);
+        GL14.glBlendColor(1, 1, 1, 0.55f + 0.45f * pulse);
         GL11.glCallList(scene.getOutlineList());
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         setPassState(0, 1f);
@@ -865,7 +870,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
                 TileEntity tile = entry.getValue();
                 if (!tile.shouldRenderInPass(pass)) continue;
                 long pos = entry.getLongKey();
-                if (scene.getSelection() != null && !scene.selectedBlocks.contains(pos)) continue;
+                if (scene.isHighlightActive() && !scene.selectedBlocks.contains(pos)) continue;
                 AnimUnit unit = scene.units.get(scene.unitOfBlock.get(pos));
                 if (!isUnitVisible(unit)) continue;
                 float p = unitProgress(unit, time);
@@ -892,49 +897,6 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         GL11.glDisable(GL11.GL_LIGHTING);
         setPassState(0, 1f);
     }
-
-    /** Coloured hatch positions, faint through other blocks and stronger where visible, like the NEI "H" button. */
-    private void drawHatchOverlay(float time) {
-        int list = scene.getHatchList();
-        if (list < 0 || time < getTotalDuration()) return;
-
-        if (layer >= 0) {
-            // only the shown layer: keep minY+layer <= y <= minY+layer+1
-            int y = scene.minY + layer;
-            planeBuffer.clear();
-            planeBuffer.put(new double[] { 0, 1, 0, -(y - 0.02) }).flip();
-            GL11.glClipPlane(GL11.GL_CLIP_PLANE0, planeBuffer);
-            planeBuffer.clear();
-            planeBuffer.put(new double[] { 0, -1, 0, y + 1.02 }).flip();
-            GL11.glClipPlane(GL11.GL_CLIP_PLANE1, planeBuffer);
-            GL11.glEnable(GL11.GL_CLIP_PLANE0);
-            GL11.glEnable(GL11.GL_CLIP_PLANE1);
-        }
-
-        GL11.glDisable(GL11.GL_TEXTURE_2D);
-        GL11.glDisable(GL11.GL_CULL_FACE);
-        GL11.glDisable(GL11.GL_ALPHA_TEST);
-        GL11.glEnable(GL11.GL_BLEND);
-        GL11.glBlendFunc(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA);
-        GL11.glDepthMask(false);
-
-        GL11.glDisable(GL11.GL_DEPTH_TEST);
-        GL14.glBlendColor(1, 1, 1, 0.18f);
-        GL11.glCallList(list);
-        GL11.glEnable(GL11.GL_DEPTH_TEST);
-        GL14.glBlendColor(1, 1, 1, 0.42f);
-        GL11.glCallList(list);
-
-        GL11.glDisable(GL11.GL_CLIP_PLANE0);
-        GL11.glDisable(GL11.GL_CLIP_PLANE1);
-        GL11.glDepthMask(true);
-        GL11.glEnable(GL11.GL_ALPHA_TEST);
-        GL11.glEnable(GL11.GL_CULL_FACE);
-        GL11.glEnable(GL11.GL_TEXTURE_2D);
-        setPassState(0, 1f);
-    }
-
-    private final DoubleBuffer planeBuffer = BufferUtils.createDoubleBuffer(4);
 
     private void drawHighlight(MovingObjectPosition mop) {
         GL11.glDisable(GL11.GL_TEXTURE_2D);
@@ -966,7 +928,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         pickState[6] = centerY;
         pickState[7] = centerZ;
         pickState[8] = layer;
-        pickState[9] = scene.getSelection() == null ? -1 : scene.selectedBlocks.size();
+        pickState[9] = !scene.isHighlightActive() ? -1 : scene.selectedBlocks.size();
         pickState[10] = time < getTotalDuration() + INTRO_DURATION ? time : -1;
         pickState[11] = sceneW * 10000f + sceneH;
         if (Arrays.equals(pickState, lastPickState)) return lastPick;
@@ -996,7 +958,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         Vec3 start = Vec3.createVectorHelper(nx + dx * from, ny + dy * from, nz + dz * from);
         Vec3 end = Vec3.createVectorHelper(nx + dx * to, ny + dy * to, nz + dz * to);
 
-        LongSet targets = scene.getSelection() != null ? scene.selectedBlocks : pickTargets;
+        LongSet targets = scene.isHighlightActive() ? scene.selectedBlocks : pickTargets;
         MovingObjectPosition result = scene.world.rayTraceBlocksWithTargetMap(start, end, targets);
         if (result == null) return null;
         long pos = CoordinatePacker.pack(result.blockX, result.blockY, result.blockZ);
@@ -1166,8 +1128,8 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
     @Override
     protected void keyTyped(char typedChar, int keyCode) {
-        if (keyCode == Keyboard.KEY_ESCAPE && scene.getSelection() != null) {
-            scene.setSelection(null, layer);
+        if (keyCode == Keyboard.KEY_ESCAPE && scene.isHighlightActive()) {
+            scene.clearHighlight();
             return;
         }
         if (keyCode == Keyboard.KEY_ESCAPE || keyCode == mc.gameSettings.keyBindInventory.getKeyCode()) {
@@ -1191,7 +1153,9 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             case Keyboard.KEY_UP, Keyboard.KEY_PRIOR -> setLayer(layer + 1);
             case Keyboard.KEY_DOWN, Keyboard.KEY_NEXT -> setLayer(layer - 1);
             case Keyboard.KEY_SPACE -> autoRotate = !autoRotate;
-            case Keyboard.KEY_H -> showHatches = !showHatches;
+            case Keyboard.KEY_H -> {
+                if (!scene.hatches.groups.isEmpty()) toggleHatches();
+            }
             default -> {}
         }
     }

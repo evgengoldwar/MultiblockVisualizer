@@ -38,7 +38,6 @@ import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.interfaces.tileentity.ITurnable;
 import gregtech.api.threads.RunnableMachineUpdate;
 import gregtech.common.misc.GTStructureChannels;
-import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2IntMap;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
@@ -79,10 +78,9 @@ public class StructureScene {
     public String error;
 
     public final HatchScanner hatches = new HatchScanner();
+    private static final int HIGHLIGHT_COLOR = 0xE6B550;
 
     private int listBase = -1;
-    /** coloured overlay of every hatch position, alpha comes from the blend colour */
-    private int hatchList = -1;
     /** whole structure with hidden faces culled, solid at fullList and translucent at fullList + 1 */
     private int fullList = -1;
     /** every layer with all faces, 2 lists per layer */
@@ -91,6 +89,8 @@ public class StructureScene {
     // highlight of one component: selected solid/translucent, ghost solid/translucent, outlines
     private int selectionBase = -1;
     private ItemStack selectionStack;
+    /** highlight every hatch position instead of one component */
+    private boolean hatchHighlight;
     private int selectionLayer;
     public final LongSet selectedBlocks = new LongOpenHashSet();
 
@@ -135,6 +135,7 @@ public class StructureScene {
         renderedTiles.clear();
         blockStacks.clear();
         selectionStack = null;
+        hatchHighlight = false;
         selectedBlocks.clear();
         hatches.clear();
         error = null;
@@ -331,73 +332,8 @@ public class StructureScene {
         fullList = GLAllocation.generateDisplayLists(2);
         compileBlocks(fullList, world.blockMap.keySet(), false);
 
-        if (!hatches.groups.isEmpty()) {
-            hatchList = GLAllocation.generateDisplayLists(1);
-            GL11.glNewList(hatchList, GL11.GL_COMPILE);
-            Tessellator tessellator = Tessellator.instance;
-            tessellator.startDrawingQuads();
-            for (Int2ObjectMap.Entry<LongSet> group : hatches.groups.int2ObjectEntrySet()) {
-                int color = EnumColor.VALUES[group.getIntKey() % EnumColor.VALUES.length].color;
-                tessellator.setColorOpaque_I(color);
-                for (long pos : group.getValue()) addOverlayCube(tessellator, pos, group.getValue());
-            }
-            tessellator.draw();
-            GL11.glEndList();
-        }
-
         // the GL side of an active highlight was dropped together with everything else
-        if (selectionStack != null) {
-            ItemStack selection = selectionStack;
-            selectionStack = null;
-            setSelection(selection, selectionLayer);
-        }
-    }
-
-    public int getHatchList() {
-        return hatchList;
-    }
-
-    /** Hatch group of one block, faces shared with blocks of the same group are left out. */
-    private static void addOverlayCube(Tessellator t, long pos, LongSet group) {
-        int x = CoordinatePacker.unpackX(pos), y = CoordinatePacker.unpackY(pos), z = CoordinatePacker.unpackZ(pos);
-        double e = 0.01;
-        double x0 = x - e, y0 = y - e, z0 = z - e, x1 = x + 1 + e, y1 = y + 1 + e, z1 = z + 1 + e;
-        if (!group.contains(CoordinatePacker.pack(x, y - 1, z))) {
-            t.addVertex(x0, y0, z0);
-            t.addVertex(x1, y0, z0);
-            t.addVertex(x1, y0, z1);
-            t.addVertex(x0, y0, z1);
-        }
-        if (!group.contains(CoordinatePacker.pack(x, y + 1, z))) {
-            t.addVertex(x0, y1, z0);
-            t.addVertex(x0, y1, z1);
-            t.addVertex(x1, y1, z1);
-            t.addVertex(x1, y1, z0);
-        }
-        if (!group.contains(CoordinatePacker.pack(x, y, z - 1))) {
-            t.addVertex(x0, y0, z0);
-            t.addVertex(x0, y1, z0);
-            t.addVertex(x1, y1, z0);
-            t.addVertex(x1, y0, z0);
-        }
-        if (!group.contains(CoordinatePacker.pack(x, y, z + 1))) {
-            t.addVertex(x0, y0, z1);
-            t.addVertex(x1, y0, z1);
-            t.addVertex(x1, y1, z1);
-            t.addVertex(x0, y1, z1);
-        }
-        if (!group.contains(CoordinatePacker.pack(x - 1, y, z))) {
-            t.addVertex(x0, y0, z0);
-            t.addVertex(x0, y0, z1);
-            t.addVertex(x0, y1, z1);
-            t.addVertex(x0, y1, z0);
-        }
-        if (!group.contains(CoordinatePacker.pack(x + 1, y, z))) {
-            t.addVertex(x1, y0, z0);
-            t.addVertex(x1, y1, z0);
-            t.addVertex(x1, y1, z1);
-            t.addVertex(x1, y0, z1);
-        }
+        if (isHighlightActive()) applyHighlight(selectionLayer);
     }
 
     public int getFullList() {
@@ -453,8 +389,7 @@ public class StructureScene {
         if (listBase >= 0) GLAllocation.deleteDisplayLists(listBase);
         if (layerListBase >= 0) GLAllocation.deleteDisplayLists(layerListBase);
         if (fullList >= 0) GLAllocation.deleteDisplayLists(fullList);
-        if (hatchList >= 0) GLAllocation.deleteDisplayLists(hatchList);
-        listBase = layerListBase = fullList = hatchList = -1;
+        listBase = layerListBase = fullList = -1;
         for (AnimUnit unit : units) unit.list = -1;
         releaseSelection();
     }
@@ -492,20 +427,66 @@ public class StructureScene {
         return selectionStack;
     }
 
+    public boolean isHatchHighlight() {
+        return hatchHighlight;
+    }
+
+    public boolean isHighlightActive() {
+        return selectionStack != null || hatchHighlight;
+    }
+
+    public void clearHighlight() {
+        selectionStack = null;
+        hatchHighlight = false;
+        selectedBlocks.clear();
+        releaseSelection();
+    }
+
     /**
-     * Highlights every block of the given component (null clears it).
+     * Highlights every block of the given component (null clears it), replacing a hatch highlight.
      *
      * @param layer the layer filter currently shown, -1 for all
      */
     public void setSelection(ItemStack stack, int layer) {
         if (stack == null) {
-            selectionStack = null;
-            selectedBlocks.clear();
-            releaseSelection();
+            if (selectionStack != null) clearHighlight();
             return;
         }
         if (sameItem(stack, selectionStack) && layer == selectionLayer && selectionBase >= 0) return;
         selectionStack = stack.copy();
+        hatchHighlight = false;
+        applyHighlight(layer);
+    }
+
+    /** Highlights all hatch positions, outlined in the colour of their hint dot, replacing a component highlight. */
+    public void setHatchHighlight(boolean enabled, int layer) {
+        if (!enabled) {
+            if (hatchHighlight) clearHighlight();
+            return;
+        }
+        if (hatchHighlight && layer == selectionLayer && selectionBase >= 0) return;
+        selectionStack = null;
+        hatchHighlight = true;
+        applyHighlight(layer);
+    }
+
+    /** Re-applies the current highlight for another layer filter. */
+    public void setHighlightLayer(int layer) {
+        if (isHighlightActive() && layer != selectionLayer) applyHighlight(layer);
+    }
+
+    private boolean isHighlighted(long pos) {
+        if (hatchHighlight) return hatches.dotForPos.containsKey(pos);
+        return sameItem(getBlockStack(pos), selectionStack);
+    }
+
+    private int getOutlineColor(long pos) {
+        if (!hatchHighlight) return HIGHLIGHT_COLOR;
+        int dot = hatches.dotForPos.get(pos);
+        return EnumColor.VALUES[dot % EnumColor.VALUES.length].color;
+    }
+
+    private void applyHighlight(int layer) {
         selectionLayer = layer;
         releaseSelection();
 
@@ -514,7 +495,7 @@ public class StructureScene {
         selectedBlocks.clear();
         for (long pos : world.blockMap.keySet()) {
             if (layer >= 0 && CoordinatePacker.unpackY(pos) != minY + layer) continue;
-            if (sameItem(getBlockStack(pos), selectionStack)) {
+            if (isHighlighted(pos)) {
                 selected.add(pos);
                 selectedBlocks.add(pos);
             } else {
@@ -526,13 +507,13 @@ public class StructureScene {
         compileBlocks(selectionBase, selected, true);
         compileBlocks(selectionBase + 2, ghosts, true);
 
-        // outlines of the selected blocks, colour comes from glColor so they can pulse
+        // outlines of the highlighted blocks, alpha comes from the blend colour so they can pulse
         GL11.glNewList(selectionBase + 4, GL11.GL_COMPILE);
         Tessellator tessellator = Tessellator.instance;
         tessellator.startDrawing(GL11.GL_LINES);
-        tessellator.disableColor();
         double e = 0.004;
         for (long pos : selected) {
+            tessellator.setColorOpaque_I(getOutlineColor(pos));
             double x = CoordinatePacker.unpackX(pos), y = CoordinatePacker.unpackY(pos),
                 z = CoordinatePacker.unpackZ(pos);
             addBoxLines(tessellator, x - e, y - e, z - e, x + 1 + e, y + 1 + e, z + 1 + e);
