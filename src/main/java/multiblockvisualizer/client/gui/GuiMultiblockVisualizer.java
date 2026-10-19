@@ -85,6 +85,9 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
     // camera
     private float yaw, pitch, distance;
+    /** what is actually rendered, eases towards yaw/pitch/distance so dragging and zooming feel smooth */
+    private float viewYaw, viewPitch, viewDistance;
+    private boolean snapView = true;
     private float centerX, centerY, centerZ;
     private boolean autoRotate = Config.autoRotate;
 
@@ -103,7 +106,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
     // input
     private int dragButton = -1;
-    private int lastMouseX, lastMouseY;
+    private float lastRawX, lastRawY;
 
     // picking
     private final FloatBuffer modelMatrix = BufferUtils.createFloatBuffer(16);
@@ -235,6 +238,12 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         yaw = -35f;
         pitch = 25f;
         distance = fitDistance();
+        if (snapView) {
+            viewYaw = yaw;
+            viewPitch = pitch;
+            viewDistance = distance;
+            snapView = false;
+        }
     }
 
     private float fitDistance() {
@@ -339,7 +348,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         lastFrame = now;
         float time = (now - animStart) / 1e9f;
 
-        if (autoRotate && dragButton < 0) yaw += AUTO_ROTATE_SPEED * delta;
+        updateCamera(delta);
 
         drawGradientRect(0, 0, width, height, 0xE8101318, 0xF0080A0E);
 
@@ -525,9 +534,9 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         GL11.glMatrixMode(GL11.GL_MODELVIEW);
         GL11.glPushMatrix();
         GL11.glLoadIdentity();
-        GL11.glTranslatef(0, 0, -distance * (1.25f - 0.25f * intro));
-        GL11.glRotatef(pitch, 1, 0, 0);
-        GL11.glRotatef(yaw, 0, 1, 0);
+        GL11.glTranslatef(0, 0, -viewDistance * (1.25f - 0.25f * intro));
+        GL11.glRotatef(viewPitch, 1, 0, 0);
+        GL11.glRotatef(viewYaw, 0, 1, 0);
         GL11.glTranslatef(-centerX, -centerY, -centerZ);
 
         modelMatrix.clear();
@@ -809,9 +818,9 @@ public class GuiMultiblockVisualizer extends GuiScreen {
     private MovingObjectPosition pickCached(float time) {
         pickState[0] = Mouse.getX();
         pickState[1] = Mouse.getY();
-        pickState[2] = yaw;
-        pickState[3] = pitch;
-        pickState[4] = distance;
+        pickState[2] = viewYaw;
+        pickState[3] = viewPitch;
+        pickState[4] = viewDistance;
         pickState[5] = centerX;
         pickState[6] = centerY;
         pickState[7] = centerZ;
@@ -926,8 +935,8 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
         if (isInScene(mouseX, mouseY) && (button == 0 || button == 1)) {
             dragButton = button;
-            lastMouseX = mouseX;
-            lastMouseY = mouseY;
+            lastRawX = Mouse.getX();
+            lastRawY = Mouse.getY();
         }
     }
 
@@ -936,29 +945,48 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         if (button >= 0 && button == dragButton) dragButton = -1;
     }
 
-    @Override
-    protected void mouseClickMove(int mouseX, int mouseY, int button, long timeSinceClick) {
-        if (dragButton < 0 || button != dragButton) return;
-        int dx = mouseX - lastMouseX;
-        int dy = mouseY - lastMouseY;
-        lastMouseX = mouseX;
-        lastMouseY = mouseY;
-
-        if (dragButton == 0) {
-            yaw += dx * 0.9f;
-            pitch = Math.max(-89.9f, Math.min(89.9f, pitch + dy * 0.9f));
-        } else {
-            // pan in the camera plane, one GUI pixel = one pixel of movement at the focus distance
-            float perPixel = 2f * distance * (float) Math.tan(Math.toRadians(FOV / 2)) / sceneH;
-            double yawR = Math.toRadians(yaw), pitchR = Math.toRadians(pitch);
-            float rx = (float) Math.cos(yawR), rz = (float) Math.sin(yawR);
-            float ux = (float) (Math.sin(pitchR) * Math.sin(yawR));
-            float uy = (float) Math.cos(pitchR);
-            float uz = (float) (-Math.sin(pitchR) * Math.cos(yawR));
-            centerX += (-rx * dx + ux * dy) * perPixel;
-            centerY += (uy * dy) * perPixel;
-            centerZ += (-rz * dx + uz * dy) * perPixel;
+    /**
+     * Dragging is read from the raw window position once per frame instead of from GUI mouse events: those come in
+     * whole GUI pixels (2-4 real pixels), which made rotating by hand look like it ran at a low frame rate.
+     */
+    private void updateCamera(float delta) {
+        if (dragButton >= 0 && !Mouse.isButtonDown(dragButton)) dragButton = -1;
+        if (dragButton >= 0) {
+            float scale = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight).getScaleFactor();
+            float rawX = Mouse.getX(), rawY = Mouse.getY();
+            float dx = (rawX - lastRawX) / scale;
+            float dy = -(rawY - lastRawY) / scale; // window y points up, GUI y down
+            lastRawX = rawX;
+            lastRawY = rawY;
+            if (dragButton == 0) {
+                yaw += dx * 0.9f;
+                pitch = Math.max(-89.9f, Math.min(89.9f, pitch + dy * 0.9f));
+            } else if (dx != 0 || dy != 0) {
+                pan(dx, dy);
+            }
+        } else if (autoRotate) {
+            float step = AUTO_ROTATE_SPEED * delta;
+            yaw += step;
+            viewYaw += step;
         }
+
+        float k = 1f - (float) Math.exp(-delta * 22f);
+        viewYaw += (yaw - viewYaw) * k;
+        viewPitch += (pitch - viewPitch) * k;
+        viewDistance += (distance - viewDistance) * k;
+    }
+
+    /** Moves the focus point in the camera plane, one GUI pixel = one pixel of movement at the focus distance. */
+    private void pan(float dx, float dy) {
+        float perPixel = 2f * viewDistance * (float) Math.tan(Math.toRadians(FOV / 2)) / sceneH;
+        double yawR = Math.toRadians(viewYaw), pitchR = Math.toRadians(viewPitch);
+        float rx = (float) Math.cos(yawR), rz = (float) Math.sin(yawR);
+        float ux = (float) (Math.sin(pitchR) * Math.sin(yawR));
+        float uy = (float) Math.cos(pitchR);
+        float uz = (float) (-Math.sin(pitchR) * Math.cos(yawR));
+        centerX += (-rx * dx + ux * dy) * perPixel;
+        centerY += (uy * dy) * perPixel;
+        centerZ += (-rz * dx + uz * dy) * perPixel;
     }
 
     @Override
