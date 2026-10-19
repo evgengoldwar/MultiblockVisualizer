@@ -9,6 +9,8 @@ import static multiblockvisualizer.client.scene.Anim.clamp01;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.function.Predicate;
 
 import net.minecraft.block.Block;
@@ -18,6 +20,7 @@ import net.minecraft.client.renderer.GLAllocation;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.texture.TextureMap;
+import net.minecraft.client.resources.I18n;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
@@ -38,14 +41,17 @@ import com.gtnewhorizon.structurelib.alignment.enumerable.ExtendedFacing;
 import com.gtnewhorizon.structurelib.alignment.enumerable.Flip;
 import com.gtnewhorizon.structurelib.alignment.enumerable.Rotation;
 
+import blockrenderer6343.client.utils.EnumColor;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.metatileentity.implementations.MTEHatch;
 import it.unimi.dsi.fastutil.longs.Long2IntMap;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import multiblockvisualizer.Config;
+import multiblockvisualizer.client.scene.HatchScanner;
 import multiblockvisualizer.client.scene.StructureScene;
 import multiblockvisualizer.client.scene.StructureScene.AnimUnit;
 
@@ -100,6 +106,15 @@ public class Projection {
     private final List<ExtendedFacing> poses = new ArrayList<>();
     private int poseIndex;
     private int ghostList = -1;
+
+    // block in the player's hand: where it can go is drawn solid, the other ghosts fade out
+    private ItemStack heldStack;
+    private final LongSet heldMatches = new LongOpenHashSet();
+    private int heldList = -1;
+
+    // hatch positions, outlined in the colour of their hint dot
+    private final LongArrayList hatchSlots = new LongArrayList();
+    private final LongSet hatchFilled = new LongOpenHashSet();
     /** every block, shown while choosing a place */
     private int previewList = -1;
     /** mini-block copies of the scene's animation units (2 lists each), the scene only has full size ones */
@@ -186,6 +201,12 @@ public class Projection {
             casingKeys.add(blockKey(scene.world, pos));
         }
 
+        hatchSlots.clear();
+        for (long pos : scene.world.blockMap.keySet()) {
+            if (isHatchSlot(pos)) hatchSlots.add(pos);
+        }
+        hatchFilled.clear();
+
         layerTotals = new int[scene.getSizeY()];
         layerCorrects = new int[scene.getSizeY()];
         if (layer >= scene.getSizeY()) layer = -1;
@@ -268,6 +289,85 @@ public class Projection {
         missing.clear();
         ghostBlocks.clear();
         completed = false;
+    }
+
+    /** One entry of the hatch legend: outline colour and which hatches go there. */
+    public static class HatchLegend {
+
+        public final int color;
+        public final String text;
+
+        HatchLegend(int color, String text) {
+            this.color = color;
+            this.text = text;
+        }
+    }
+
+    /** Hint dots of the hatch positions still open (grey = any hatch, for multis without hint dots). */
+    public List<HatchLegend> getHatchLegend() {
+        List<HatchLegend> legend = new ArrayList<>();
+        if (scene == null || !showHatches) return legend;
+        SortedSet<Integer> dots = new TreeSet<>();
+        for (long pos : hatchSlots) {
+            if (hatchFilled.contains(pos) || !isInShownLayer(pos)) continue;
+            dots.add(scene.hatches.dotForPos.get(pos));
+        }
+        for (int dot : dots) {
+            if (dot == HatchScanner.NO_DOT) {
+                legend.add(new HatchLegend(0xD0D0D0, I18n.format("multiblockvisualizer.projection.any_hatch")));
+                continue;
+            }
+            String hint = scene.hatches.hintForDot.get(dot);
+            legend.add(
+                new HatchLegend(
+                    EnumColor.VALUES[dot % EnumColor.VALUES.length].color,
+                    dot + (hint == null ? "" : ": " + hint)));
+        }
+        return legend;
+    }
+
+    /** Hatch positions outlined in their hint dot colour, toggled with a key, off by default. */
+    private boolean showHatches;
+
+    public void toggleHatches() {
+        showHatches = !showHatches;
+    }
+
+    public boolean isShowingHatches() {
+        return showHatches;
+    }
+
+    /** Called every tick with the item in the player's hand. */
+    public void setHeldStack(ItemStack stack) {
+        if (stack == null ? heldStack == null : StructureScene.sameItem(stack, heldStack)) return;
+        heldStack = stack == null ? null : stack.copy();
+        updateHeldMatches();
+    }
+
+    public boolean isHeldHighlightActive() {
+        return !heldMatches.isEmpty();
+    }
+
+    /** Missing positions the held block may go to: what StructureLib accepts there, or the preview's own block. */
+    private void updateHeldMatches() {
+        heldMatches.clear();
+        releaseHeld();
+        if (heldStack == null || scene == null) return;
+        for (long pos : ghostBlocks) {
+            boolean matches = StructureScene.sameItem(scene.getBlockStack(pos), heldStack);
+            if (!matches) {
+                Predicate<ItemStack> accepted = scene.getAcceptedItems(pos);
+                try {
+                    matches = accepted != null && accepted.test(heldStack);
+                } catch (Throwable ignored) {}
+            }
+            if (matches) heldMatches.add(pos);
+        }
+    }
+
+    private void releaseHeld() {
+        if (heldList >= 0) GLAllocation.deleteDisplayLists(heldList);
+        heldList = -1;
     }
 
     /** Back to following the cursor, so the projection can be put somewhere else. */
@@ -396,6 +496,16 @@ public class Projection {
             statuses.put(pos, status.ordinal());
             int posLayer = CoordinatePacker.unpackY(pos) - scene.minY;
             layerTotals[posLayer]++;
+            if (status == Status.CORRECT && isHatchSlot(pos)) {
+                TileEntity tile = world.getTileEntity(worldX(pos), worldY(pos), worldZ(pos));
+                if (tile instanceof IGregTechTileEntity gt && gt.getMetaTileEntity() instanceof MTEHatch) {
+                    hatchFilled.add(pos);
+                } else {
+                    hatchFilled.remove(pos);
+                }
+            } else {
+                hatchFilled.remove(pos);
+            }
             switch (status) {
                 case CORRECT -> {
                     newCorrect++;
@@ -428,6 +538,7 @@ public class Projection {
             ghostBlocks.clear();
             ghostBlocks.addAll(missing);
             releaseGhost();
+            updateHeldMatches();
         }
 
         if (!completed && correct == total && total > 0) {
@@ -527,7 +638,9 @@ public class Projection {
         double camY = view.lastTickPosY + (view.posY - view.lastTickPosY) * partialTicks;
         double camZ = view.lastTickPosZ + (view.posZ - view.lastTickPosZ) * partialTicks;
         float time = (System.nanoTime() - placedAt) / 1e9f;
-        float pulse = 0.5f + 0.5f * (float) Math.sin(System.nanoTime() / 1e9 * 3.0);
+        // mini blocks are already small, keep their highlight steady instead of pulsing
+        float pulse = Config.projectionMiniBlocks ? 0.5f
+            : 0.5f + 0.5f * (float) Math.sin(System.nanoTime() / 1e9 * 3.0);
 
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         GL11.glPushMatrix();
@@ -576,7 +689,16 @@ public class Projection {
                     ghostList = GLAllocation.generateDisplayLists(2);
                     scene.compileBlocks(ghostList, ghostBlocks, true, getBlockScale());
                 }
-                if (ghostList >= 0) drawHologram(ghostList, 0.4f + 0.1f * pulse);
+                if (heldMatches.isEmpty()) {
+                    if (ghostList >= 0) drawHologram(ghostList, 0.4f + 0.1f * pulse);
+                } else {
+                    if (heldList < 0) {
+                        heldList = GLAllocation.generateDisplayLists(2);
+                        scene.compileBlocks(heldList, heldMatches, true, getBlockScale());
+                    }
+                    if (ghostList >= 0) drawHologram(ghostList, 0.12f);
+                    drawHologram(heldList, 0.65f + 0.2f * pulse);
+                }
             }
             GL11.glDisable(GL11.GL_POLYGON_OFFSET_FILL);
             GL11.glDepthMask(false);
@@ -645,11 +767,39 @@ public class Projection {
     }
 
     /** Red boxes on wrong blocks, orange on blocks of the right type but another variant. */
+    private boolean isInShownLayer(long pos) {
+        return layer < 0 || CoordinatePacker.unpackY(pos) - scene.minY == layer;
+    }
+
     private void drawMarks(double camX, double camY, double camZ, float pulse) {
-        if (wrong == 0 && variants == 0) return;
         GL11.glPushMatrix();
         GL11.glTranslated(-camX, -camY, -camZ);
         GL11.glDisable(GL11.GL_CULL_FACE);
+
+        // where the held block goes
+        for (long pos : heldMatches) {
+            drawBox(worldX(pos), worldY(pos), worldZ(pos), 0.90f, 0.71f, 0.31f, 0f, 0.5f + 0.5f * pulse);
+        }
+
+        // hatch positions still without a hatch, in their hint dot colour (grey: any hatch)
+        if (showHatches) {
+            for (long pos : hatchSlots) {
+                if (hatchFilled.contains(pos) || !isInShownLayer(pos)) continue;
+                int dot = scene.hatches.dotForPos.get(pos);
+                int color = dot == HatchScanner.NO_DOT ? 0xD0D0D0
+                    : EnumColor.VALUES[dot % EnumColor.VALUES.length].color;
+                drawBox(
+                    worldX(pos),
+                    worldY(pos),
+                    worldZ(pos),
+                    (color >> 16 & 255) / 255f,
+                    (color >> 8 & 255) / 255f,
+                    (color & 255) / 255f,
+                    0.10f + 0.06f * pulse,
+                    0.85f);
+            }
+        }
+
         for (Long2IntMap.Entry entry : statuses.long2IntEntrySet()) {
             int status = entry.getIntValue();
             if (status != Status.WRONG.ordinal() && status != Status.VARIANT.ordinal()) continue;
@@ -671,7 +821,8 @@ public class Projection {
     /** Translucent filled box with an outline, in the current coordinate space. */
     private static void drawBox(double x, double y, double z, float r, float g, float b, float fillAlpha,
         float lineAlpha) {
-        double e = 0.006;
+        // with mini blocks the box hugs the small block in the middle of its place
+        double e = 0.006 - (1 - getBlockScale()) / 2;
         double x0 = x - e, y0 = y - e, z0 = z - e, x1 = x + 1 + e, y1 = y + 1 + e, z1 = z + 1 + e;
         Tessellator t = Tessellator.instance;
         t.startDrawingQuads();
@@ -723,6 +874,7 @@ public class Projection {
     }
 
     private void releaseGhost() {
+        releaseHeld();
         if (ghostList >= 0) GLAllocation.deleteDisplayLists(ghostList);
         if (previewList >= 0) GLAllocation.deleteDisplayLists(previewList);
         ghostList = previewList = -1;

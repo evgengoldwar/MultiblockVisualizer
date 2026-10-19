@@ -26,6 +26,10 @@ public class ClientProxy extends CommonProxy {
         "key.multiblockvisualizer.pose",
         Keyboard.KEY_G,
         "key.categories.multiblockvisualizer");
+    public static final KeyBinding HATCHES_KEY = new KeyBinding(
+        "key.multiblockvisualizer.hatches",
+        Keyboard.KEY_H,
+        "key.categories.multiblockvisualizer");
     public static final KeyBinding LAYER_UP_KEY = new KeyBinding(
         "key.multiblockvisualizer.layer_up",
         Keyboard.KEY_UP,
@@ -56,6 +60,7 @@ public class ClientProxy extends CommonProxy {
         ClientRegistry.registerKeyBinding(ROTATE_KEY);
         ClientRegistry.registerKeyBinding(DETACH_KEY);
         ClientRegistry.registerKeyBinding(POSE_KEY);
+        ClientRegistry.registerKeyBinding(HATCHES_KEY);
         ClientRegistry.registerKeyBinding(LAYER_UP_KEY);
         ClientRegistry.registerKeyBinding(LAYER_DOWN_KEY);
         ClientRegistry.registerKeyBinding(LAYER_ALL_KEY);

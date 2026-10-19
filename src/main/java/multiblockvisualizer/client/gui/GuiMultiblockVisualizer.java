@@ -193,8 +193,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         releaseFloor();
         if (scene.getSizeY() > 0 && layer >= scene.getSizeY()) layer = -1;
         lastUnitStart = scene.layoutTimeline(UNIT_DURATION / Config.animationSpeed, Config.animationSpeed);
-        pickTargets.clear();
-        for (AnimUnit unit : scene.units) pickTargets.addAll(unit.blocks);
+        refreshPickTargets();
         refreshIngredients();
         if (resetCamera) resetCamera();
         replay();
@@ -296,6 +295,10 @@ public class GuiMultiblockVisualizer extends GuiScreen {
                     .activeWhen(() -> layer >= 0)
                     .tooltip(() -> I18n.format("multiblockvisualizer.gui.layer.tooltip")));
         buttons.add(new FlatButton(() -> ">", () -> setLayer(layer + 1)).fixedWidth(18));
+        buttons.add(
+            new FlatButton(() -> I18n.format("multiblockvisualizer.gui.cut"), this::toggleCut)
+                .activeWhen(() -> scene.isCutMode())
+                .tooltip(() -> I18n.format("multiblockvisualizer.gui.cut.tooltip")));
         buttons.add(
             new FlatButton(() -> I18n.format("multiblockvisualizer.gui.hatches"), this::toggleHatches)
                 .visibleWhen(() -> !scene.hatches.groups.isEmpty())
@@ -427,6 +430,21 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         return help.toString();
     }
 
+    /** Blocks the mouse can point at: the shown ones, so a cut view can be looked into. */
+    private void refreshPickTargets() {
+        pickTargets.clear();
+        for (AnimUnit unit : scene.units) {
+            if (isUnitVisible(unit)) pickTargets.addAll(unit.blocks);
+        }
+    }
+
+    private void toggleCut() {
+        scene.setCutMode(!scene.isCutMode());
+        if (layer < 0) setLayer(scene.getSizeY() - 1);
+        refreshIngredients();
+        refreshPickTargets();
+    }
+
     private void setLayer(int newLayer) {
         int layers = scene.getSizeY();
         if (newLayer < -1) newLayer = layers - 1;
@@ -434,6 +452,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         if (newLayer == layer) return;
         layer = newLayer;
         refreshIngredients();
+        refreshPickTargets();
         scene.setHighlightLayer(layer);
     }
 
@@ -809,7 +828,8 @@ public class GuiMultiblockVisualizer extends GuiScreen {
     }
 
     private boolean isUnitVisible(AnimUnit unit) {
-        return layer < 0 || unit.y == scene.minY + layer;
+        if (layer < 0) return true;
+        return scene.isCutMode() ? unit.y <= scene.minY + layer : unit.y == scene.minY + layer;
     }
 
     private float unitProgress(AnimUnit unit, float time) {
@@ -818,7 +838,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
     private void drawFloor(float alpha) {
         if (alpha <= 0) return;
-        float y = (layer < 0 ? scene.minY : scene.minY + layer) - 0.02f;
+        float y = (layer < 0 || scene.isCutMode() ? scene.minY : scene.minY + layer) - 0.02f;
         if (alpha < 1) {
             drawFloorGeometry(y, alpha);
             return;
@@ -887,7 +907,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
         float duration = UNIT_DURATION / Config.animationSpeed;
         boolean finished = time >= getTotalDuration();
-        int fromLayer = layer < 0 ? 0 : layer;
+        int fromLayer = layer < 0 || scene.isCutMode() ? 0 : layer;
         int toLayer = layer < 0 ? scene.getSizeY() - 1 : layer;
 
         for (int pass = 0; pass < 2; pass++) {

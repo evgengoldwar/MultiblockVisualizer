@@ -1,6 +1,7 @@
 package multiblockvisualizer.client.projection;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import net.minecraft.client.Minecraft;
@@ -50,6 +51,7 @@ public class ProjectionHandler {
         if (mc.currentScreen == null) {
             while (ClientProxy.ROTATE_KEY.isPressed()) projection.rotate();
             while (ClientProxy.POSE_KEY.isPressed()) projection.cyclePose();
+            while (ClientProxy.HATCHES_KEY.isPressed()) projection.toggleHatches();
             // cycles all -> bottom ... top -> all, backwards all -> top ... bottom -> all
             while (ClientProxy.LAYER_UP_KEY.isPressed()) stepLayer(1);
             while (ClientProxy.LAYER_DOWN_KEY.isPressed()) stepLayer(-1);
@@ -62,6 +64,7 @@ public class ProjectionHandler {
                 }
             }
         }
+        projection.setHeldStack(mc.thePlayer != null ? mc.thePlayer.getHeldItem() : null);
         projection.onClientTick();
     }
 
@@ -129,6 +132,11 @@ public class ProjectionHandler {
             if (projection.getLayer() >= 0) {
                 hints.add(I18n.format("multiblockvisualizer.projection.layer_all", key(ClientProxy.LAYER_ALL_KEY)));
             }
+            hints.add(
+                I18n.format(
+                    projection.isShowingHatches() ? "multiblockvisualizer.projection.hatches_hide"
+                        : "multiblockvisualizer.projection.hatches_show",
+                    key(ClientProxy.HATCHES_KEY)));
             hints.add(I18n.format("multiblockvisualizer.projection.detach", detach));
             hints.add(I18n.format("multiblockvisualizer.projection.remove", detach));
         }
@@ -138,6 +146,8 @@ public class ProjectionHandler {
         if (!placing && projection.getWrong() > 0) height += 10;
         if (!placing && projection.getVariants() > 0) height += 10;
         if (!placing && projection.getLayer() >= 0) height += 18;
+        List<Projection.HatchLegend> legend = placing ? Collections.emptyList() : projection.getHatchLegend();
+        if (!legend.isEmpty()) height += 13 + legend.size() * 10;
         int x = 6;
         int y = event.resolution.getScaledHeight() / 2 - height / 2;
 
@@ -229,6 +239,17 @@ public class ProjectionHandler {
                     lineY,
                     0xFFA040);
                 lineY += 10;
+            }
+
+            if (!legend.isEmpty()) {
+                lineY += 3;
+                font.drawString(I18n.format("multiblockvisualizer.projection.hatches"), x + 5, lineY, 0xB0B0B0);
+                lineY += 10;
+                for (Projection.HatchLegend entry : legend) {
+                    Gui.drawRect(x + 5, lineY + 1, x + 11, lineY + 7, 0xFF000000 | entry.color);
+                    font.drawString(font.trimStringToWidth(entry.text, PANEL_WIDTH - 20), x + 14, lineY, 0xD0D0D0);
+                    lineY += 10;
+                }
             }
         } else {
             shownProgress = 0;
