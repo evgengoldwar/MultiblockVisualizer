@@ -7,6 +7,8 @@ import static multiblockvisualizer.client.scene.Anim.applyUnitTransform;
 import static multiblockvisualizer.client.scene.Anim.clamp01;
 
 import java.util.Arrays;
+import java.util.List;
+import java.util.function.Predicate;
 
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
@@ -345,6 +347,22 @@ public class Projection {
         Block real = world.getBlock(x, y, z);
         if (real.isAir(world, x, y, z) || real.isReplaceable(world, x, y, z)) return Status.MISSING;
 
+        Status exact = getExactStatus(world, pos, real, x, y, z);
+        if (exact == Status.CORRECT) return exact;
+
+        // anything else the structure allows here: the casing on a hatch position, any hatch, other coil tiers...
+        Predicate<ItemStack> accepted = scene.getAcceptedItems(pos);
+        if (accepted != null) {
+            ItemStack realStack = getStack(world, real, x, y, z);
+            try {
+                if (realStack != null && accepted.test(realStack)) return Status.CORRECT;
+            } catch (Throwable ignored) {}
+        }
+        return exact;
+    }
+
+    /** Compares with the block the preview has at this position (plus the hatch slot rules). */
+    private Status getExactStatus(World world, long pos, Block real, int x, int y, int z) {
         int dx = CoordinatePacker.unpackX(pos), dy = CoordinatePacker.unpackY(pos), dz = CoordinatePacker.unpackZ(pos);
         TileEntity realTile = world.getTileEntity(x, y, z);
         IMetaTileEntity realMte = realTile instanceof IGregTechTileEntity gt ? gt.getMetaTileEntity() : null;
@@ -368,6 +386,19 @@ public class Projection {
         return expected.getDamageValue(scene.world, dx, dy, dz) == real.getDamageValue(world, x, y, z)
             ? Status.CORRECT
             : Status.VARIANT;
+    }
+
+    /** The item form of a placed block, what StructureLib's placement predicates test. */
+    private static ItemStack getStack(World world, Block block, int x, int y, int z) {
+        try {
+            List<ItemStack> drops = block.getDrops(world, x, y, z, world.getBlockMetadata(x, y, z), 0);
+            if (drops != null && !drops.isEmpty() && drops.get(0) != null) return drops.get(0);
+        } catch (Throwable ignored) {}
+        try {
+            return new ItemStack(block, 1, block.getDamageValue(world, x, y, z));
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     // ------------------------------------------------------------------ rendering

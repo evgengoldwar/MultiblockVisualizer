@@ -84,6 +84,11 @@ public class HatchScanner {
         dotForPos.defaultReturnValue(NO_DOT);
     }
 
+    /** Structure element StructureLib visited at this preview position during the build, or null. */
+    public IStructureElement<Object> getElement(long pos) {
+        return elements.get(pos);
+    }
+
     public void clear() {
         elements.clear();
         groups.clear();

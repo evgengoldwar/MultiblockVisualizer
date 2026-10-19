@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.Predicate;
 
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
@@ -26,9 +27,11 @@ import com.gtnewhorizon.structurelib.alignment.constructable.ChannelDataAccessor
 import com.gtnewhorizon.structurelib.alignment.constructable.IConstructable;
 import com.gtnewhorizon.structurelib.alignment.constructable.IConstructableProvider;
 import com.gtnewhorizon.structurelib.alignment.constructable.ISurvivalConstructable;
+import com.gtnewhorizon.structurelib.structure.IStructureElement;
 import com.gtnewhorizon.structurelib.structure.ISurvivalBuildEnvironment;
 
 import blockrenderer6343.api.utils.CreativeItemSource;
+import blockrenderer6343.client.utils.BRUtil;
 import blockrenderer6343.client.utils.EnumColor;
 import blockrenderer6343.client.world.TrackedDummyWorld;
 import gregtech.api.interfaces.INEIPreviewModifier;
@@ -78,6 +81,10 @@ public class StructureScene {
     public String error;
 
     public final HatchScanner hatches = new HatchScanner();
+    private IConstructable constructable;
+    private ItemStack trigger;
+    /** what StructureLib accepts at a position, null when unknown */
+    private final Long2ObjectMap<Predicate<ItemStack>> acceptedItems = new Long2ObjectOpenHashMap<>();
     private static final int HIGHLIGHT_COLOR = 0xE6B550;
 
     private int listBase = -1;
@@ -129,6 +136,9 @@ public class StructureScene {
      */
     public void build(ItemStack controller, IConstructable constructable, ItemStack trigger) {
         releaseGl();
+        this.constructable = constructable;
+        this.trigger = trigger.copy();
+        acceptedItems.clear();
         world.clear();
         units.clear();
         unitOfBlock.clear();
@@ -417,6 +427,33 @@ public class StructureScene {
         } catch (Throwable ignored) {}
         blockStacks.put(pos, result);
         return result;
+    }
+
+    /**
+     * Everything the structure accepts at a preview position (the candidates NEI lists on right click), e.g. any
+     * hatch or the casing on a hatch position, or every coil tier on a coil position. Null when unknown.
+     */
+    public Predicate<ItemStack> getAcceptedItems(long pos) {
+        if (acceptedItems.containsKey(pos)) return acceptedItems.get(pos);
+        Predicate<ItemStack> predicate = null;
+        IStructureElement<Object> element = hatches.getElement(pos);
+        if (element != null && constructable != null) {
+            try {
+                IStructureElement.BlocksToPlace blocks = element.getBlocksToPlace(
+                    constructable,
+                    world,
+                    CoordinatePacker.unpackX(pos),
+                    CoordinatePacker.unpackY(pos),
+                    CoordinatePacker.unpackZ(pos),
+                    trigger,
+                    BRUtil.AUTO_PLACE_ENVIRONMENT);
+                if (blocks != null) predicate = blocks.getPredicate();
+            } catch (Throwable t) {
+                MultiblockVisualizer.LOG.debug("Could not get accepted blocks", t);
+            }
+        }
+        acceptedItems.put(pos, predicate);
+        return predicate;
     }
 
     public static boolean sameItem(ItemStack a, ItemStack b) {
