@@ -73,3 +73,6 @@ multiblockvisualizer.options.projectionMiniBlocks=Мини-блоки в про�
 multiblockvisualizer.options.projectionMiniBlocks.tooltip=Рисовать блоки проекции в половину размера по центру их места, чтобы были видны все блоки структуры
 multiblockvisualizer.options.projectionFarPlace=Проекция на любом расстоянии
 multiblockvisualizer.options.projectionFarPlace.tooltip=Проекция ставится на блоки далеко за пределами досягаемости, а если блока не видно — висит в воздухе перед вами
+key.multiblockvisualizer.pose=Проекция: сменить положение (лёжа, вверх ногами...)
+multiblockvisualizer.projection.pose=[%s] положение (лёжа, вверх ногами...)
+multiblockvisualizer.projection.pose_name=Положение: %s

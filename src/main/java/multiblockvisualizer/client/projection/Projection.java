@@ -6,6 +6,7 @@ import static multiblockvisualizer.client.scene.Anim.UNIT_DURATION;
 import static multiblockvisualizer.client.scene.Anim.applyUnitTransform;
 import static multiblockvisualizer.client.scene.Anim.clamp01;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.Predicate;
@@ -32,6 +33,10 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL14;
 
 import com.gtnewhorizon.gtnhlib.util.CoordinatePacker;
+import com.gtnewhorizon.structurelib.alignment.IAlignment;
+import com.gtnewhorizon.structurelib.alignment.enumerable.ExtendedFacing;
+import com.gtnewhorizon.structurelib.alignment.enumerable.Flip;
+import com.gtnewhorizon.structurelib.alignment.enumerable.Rotation;
 
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
@@ -92,6 +97,8 @@ public class Projection {
     private int[] layerTotals = new int[0], layerCorrects = new int[0];
     /** whether the shown layer was already complete at the last check, so it only advances when finished now */
     private boolean layerWasDone = true;
+    private final List<ExtendedFacing> poses = new ArrayList<>();
+    private int poseIndex;
     private int ghostList = -1;
     /** every block, shown while choosing a place */
     private int previewList = -1;
@@ -161,6 +168,15 @@ public class Projection {
         this.scene = scene;
         this.controller = controller.copy();
         scene.clearHighlight();
+        findPoses();
+        initFromScene();
+        rotation = getDefaultRotation();
+        layer = -1;
+        state = State.PLACING;
+    }
+
+    /** Everything derived from the scene's blocks, again after it was rebuilt in another pose. */
+    private void initFromScene() {
         lastUnitStart = scene.layoutTimeline(UNIT_DURATION / Config.animationSpeed, Config.animationSpeed);
         total = scene.world.blockMap.size();
 
@@ -170,11 +186,71 @@ public class Projection {
             casingKeys.add(blockKey(scene.world, pos));
         }
 
-        rotation = getDefaultRotation();
-        layer = -1;
         layerTotals = new int[scene.getSizeY()];
         layerCorrects = new int[scene.getSizeY()];
-        state = State.PLACING;
+        if (layer >= scene.getSizeY()) layer = -1;
+        statuses.clear();
+        missing.clear();
+        ghostBlocks.clear();
+    }
+
+    /**
+     * Orientations of the controller the multiblock allows (GT alignment limits): standing, lying on a side,
+     * upside down, mirrored, facing up or down. Turning around the vertical axis is done by {@link #rotate()}.
+     */
+    private void findPoses() {
+        poses.clear();
+        poseIndex = 0;
+        if (!(scene.getConstructable() instanceof IAlignment alignment)) return;
+        ExtendedFacing standard = ExtendedFacing.of(ForgeDirection.SOUTH, Rotation.NORMAL, Flip.NONE);
+        for (ExtendedFacing facing : ExtendedFacing.VALUES) {
+            ForgeDirection direction = facing.getDirection();
+            if (direction != ForgeDirection.SOUTH && direction != ForgeDirection.UP
+                && direction != ForgeDirection.DOWN) continue;
+            try {
+                if (!alignment.isNewExtendedFacingValid(facing)) continue;
+            } catch (Throwable t) {
+                continue;
+            }
+            if (facing == standard) poses.add(0, facing);
+            else poses.add(facing);
+        }
+    }
+
+    public int getPoseCount() {
+        return poses.size();
+    }
+
+    public int getPoseIndex() {
+        return poseIndex;
+    }
+
+    public String getPoseName() {
+        if (poses.isEmpty()) return "";
+        try {
+            return poses.get(poseIndex)
+                .getLocalizedName();
+        } catch (Throwable t) {
+            return poses.get(poseIndex)
+                .name();
+        }
+    }
+
+    /** Next allowed orientation of the controller; the structure is rebuilt around it. */
+    public void cyclePose() {
+        if (state == State.NONE || scene == null || poses.size() < 2) return;
+        poseIndex = (poseIndex + 1) % poses.size();
+        ExtendedFacing facing = poses.get(poseIndex);
+        // the standard pose is how the scene was first built, without forcing an alignment
+        boolean standard = facing == ExtendedFacing.of(ForgeDirection.SOUTH, Rotation.NORMAL, Flip.NONE);
+        scene.rebuild(standard ? null : facing);
+        onSettingsChanged();
+        initFromScene();
+        if (state == State.PLACED) {
+            placedAt = System.nanoTime();
+            completed = false;
+            check();
+        }
     }
 
     public void remove() {

@@ -23,10 +23,12 @@ import org.lwjgl.opengl.GL11;
 
 import com.gtnewhorizon.gtnhlib.util.CoordinatePacker;
 import com.gtnewhorizon.structurelib.StructureLibAPI;
+import com.gtnewhorizon.structurelib.alignment.IAlignment;
 import com.gtnewhorizon.structurelib.alignment.constructable.ChannelDataAccessor;
 import com.gtnewhorizon.structurelib.alignment.constructable.IConstructable;
 import com.gtnewhorizon.structurelib.alignment.constructable.IConstructableProvider;
 import com.gtnewhorizon.structurelib.alignment.constructable.ISurvivalConstructable;
+import com.gtnewhorizon.structurelib.alignment.enumerable.ExtendedFacing;
 import com.gtnewhorizon.structurelib.structure.IStructureElement;
 import com.gtnewhorizon.structurelib.structure.ISurvivalBuildEnvironment;
 
@@ -83,6 +85,9 @@ public class StructureScene {
     public final HatchScanner hatches = new HatchScanner();
     private IConstructable constructable;
     private ItemStack trigger;
+    private ItemStack controllerStack;
+    /** orientation of the controller (lying, upside down...), null for the default one facing south */
+    private ExtendedFacing facing;
     /** what StructureLib accepts at a position, null when unknown */
     private final Long2ObjectMap<Predicate<ItemStack>> acceptedItems = new Long2ObjectOpenHashMap<>();
     private static final int HIGHLIGHT_COLOR = 0xE6B550;
@@ -136,6 +141,7 @@ public class StructureScene {
      */
     public void build(ItemStack controller, IConstructable constructable, ItemStack trigger) {
         releaseGl();
+        this.controllerStack = controller.copy();
         this.constructable = constructable;
         this.trigger = trigger.copy();
         acceptedItems.clear();
@@ -186,6 +192,21 @@ public class StructureScene {
         }
     }
 
+    public IConstructable getConstructable() {
+        return constructable;
+    }
+
+    public ExtendedFacing getFacing() {
+        return facing;
+    }
+
+    /** Builds the same structure again with the controller in another orientation. */
+    public void rebuild(ExtendedFacing newFacing) {
+        if (controllerStack == null) return;
+        facing = newFacing;
+        build(controllerStack, constructable, trigger);
+    }
+
     /** Mirrors GTGuiMultiblockHandler#placeMultiblock from BlockRenderer6343. */
     private void place(ItemStack stackForm, ItemStack trigger) {
         boolean machineUpdatesEnabled = RunnableMachineUpdate.isCurrentThreadEnabled();
@@ -196,8 +217,11 @@ public class StructureScene {
                 .onItemUse(copy, FAKE_PLAYER, world, PLACE_X, PLACE_Y, PLACE_Z, 0, PLACE_X, PLACE_Y, PLACE_Z);
 
             TileEntity tile = world.getTileEntity(PLACE_X, PLACE_Y, PLACE_Z);
-            if (tile instanceof ITurnable turnable) turnable.setFrontFacing(ForgeDirection.SOUTH);
+            if (tile instanceof ITurnable turnable) {
+                turnable.setFrontFacing(facing != null ? facing.getDirection() : ForgeDirection.SOUTH);
+            }
             IMetaTileEntity mte = tile instanceof IGregTechTileEntity gtTile ? gtTile.getMetaTileEntity() : null;
+            if (facing != null && mte instanceof IAlignment alignment) alignment.setExtendedFacing(facing);
 
             ChannelDataAccessor.setChannelData(trigger, GTStructureChannels.HATCH.get(), 1);
             if (mte instanceof INEIPreviewModifier modifier) modifier.onPreviewConstruct(trigger);

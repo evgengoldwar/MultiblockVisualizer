@@ -73,3 +73,6 @@ multiblockvisualizer.options.projectionMiniBlocks=Mini blocks in the projection
 multiblockvisualizer.options.projectionMiniBlocks.tooltip=Draw projected blocks at half size in the middle of their place, so every block of the structure stays visible
 multiblockvisualizer.options.projectionFarPlace=Place projection at any distance
 multiblockvisualizer.options.projectionFarPlace.tooltip=The projection follows blocks far beyond reach, and floats in front of you when no block is in sight
+key.multiblockvisualizer.pose=Projection: change orientation (lying, upside down...)
+multiblockvisualizer.projection.pose=[%s] orientation (lying, upside down...)
+multiblockvisualizer.projection.pose_name=Orientation: %s

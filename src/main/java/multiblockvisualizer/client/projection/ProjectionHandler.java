@@ -49,6 +49,7 @@ public class ProjectionHandler {
         }
         if (mc.currentScreen == null) {
             while (ClientProxy.ROTATE_KEY.isPressed()) projection.rotate();
+            while (ClientProxy.POSE_KEY.isPressed()) projection.cyclePose();
             // cycles all -> bottom ... top -> all, backwards all -> top ... bottom -> all
             while (ClientProxy.LAYER_UP_KEY.isPressed()) stepLayer(1);
             while (ClientProxy.LAYER_DOWN_KEY.isPressed()) stepLayer(-1);
@@ -111,9 +112,15 @@ public class ProjectionHandler {
             hints.add(I18n.format("multiblockvisualizer.projection.place"));
             hints.add(I18n.format("multiblockvisualizer.projection.place_replace"));
             hints.add(I18n.format("multiblockvisualizer.projection.rotate", rotate));
+            if (projection.getPoseCount() > 1) {
+                hints.add(I18n.format("multiblockvisualizer.projection.pose", key(ClientProxy.POSE_KEY)));
+            }
             hints.add(I18n.format("multiblockvisualizer.projection.cancel", detach));
         } else {
             hints.add(I18n.format("multiblockvisualizer.projection.rotate", rotate));
+            if (projection.getPoseCount() > 1) {
+                hints.add(I18n.format("multiblockvisualizer.projection.pose", key(ClientProxy.POSE_KEY)));
+            }
             hints.add(
                 I18n.format(
                     "multiblockvisualizer.projection.layers",
@@ -156,6 +163,11 @@ public class ProjectionHandler {
         font.drawStringWithShadow(name, x + 24, y + 5, 0xFFFFFF);
         String subtitle = placing ? I18n.format("multiblockvisualizer.projection.placing")
             : I18n.format("multiblockvisualizer.projection.title");
+        if (projection.getPoseIndex() > 0) {
+            subtitle = font.trimStringToWidth(
+                I18n.format("multiblockvisualizer.projection.pose_name", projection.getPoseName()),
+                PANEL_WIDTH - 28);
+        }
         font.drawString(subtitle, x + 24, y + 15, 0x9A9AA6);
 
         int lineY = y + 26;
