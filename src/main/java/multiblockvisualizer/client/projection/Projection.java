@@ -159,7 +159,7 @@ public class Projection {
 
         casingKeys.clear();
         for (long pos : scene.world.blockMap.keySet()) {
-            if (scene.hatches.dotForPos.containsKey(pos) || scene.world.tileMap.containsKey(pos)) continue;
+            if (isHatchSlot(pos) || scene.world.tileMap.containsKey(pos)) continue;
             casingKeys.add(blockKey(scene.world, pos));
         }
 
@@ -330,6 +330,15 @@ public class Projection {
         }
     }
 
+    /**
+     * A position the preview filled with a hatch. Not every multiblock uses the GT hatch element BlockRenderer6343's
+     * hint dots are read from (GT++ and others have their own), so a hatch in the preview counts as well.
+     */
+    private boolean isHatchSlot(long pos) {
+        if (scene.hatches.dotForPos.containsKey(pos)) return true;
+        return scene.world.tileMap.get(pos) instanceof IGregTechTileEntity gt && gt.getMetaTileEntity() instanceof MTEHatch;
+    }
+
     private Status getStatus(World world, long pos) {
         int x = worldX(pos), y = worldY(pos), z = worldZ(pos);
         if (y < 0 || y >= 256 || !world.blockExists(x, y, z)) return Status.MISSING;
@@ -341,7 +350,7 @@ public class Projection {
         IMetaTileEntity realMte = realTile instanceof IGregTechTileEntity gt ? gt.getMetaTileEntity() : null;
 
         // hatch positions take any hatch, or any casing of this structure
-        if (scene.hatches.dotForPos.containsKey(pos)) {
+        if (isHatchSlot(pos)) {
             if (realMte instanceof MTEHatch) return Status.CORRECT;
             long realKey = Block.getIdFromBlock(real) * 65536L + real.getDamageValue(world, x, y, z);
             if (realMte == null && casingKeys.contains(realKey)) return Status.CORRECT;

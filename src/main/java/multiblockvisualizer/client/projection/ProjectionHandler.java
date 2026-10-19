@@ -87,7 +87,8 @@ public class ProjectionHandler {
     public void onOverlay(RenderGameOverlayEvent.Post event) {
         if (event.type != RenderGameOverlayEvent.ElementType.ALL) return;
         if (projection.getState() == Projection.State.NONE || projection.getController() == null) return;
-        if (mc.gameSettings.showDebugInfo) return;
+        // only in the world view, a GUI on top would cover it anyway
+        if (mc.gameSettings.showDebugInfo || mc.currentScreen != null) return;
 
         long now = System.nanoTime();
         float delta = lastFrame == 0 ? 0 : Math.min(0.1f, (now - lastFrame) / 1e9f);
@@ -123,6 +124,9 @@ public class ProjectionHandler {
         int x = 6;
         int y = event.resolution.getScaledHeight() / 2 - height / 2;
 
+        // keep every GL state we touch (item lighting, colour, depth...) away from screens drawn afterwards,
+        // NEI's structure preview rendered washed out grey otherwise
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         GL11.glPushMatrix();
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GuiMultiblockVisualizer.drawRoundedPanel(x, y, PANEL_WIDTH, height, 0xC0101418, 0x40FFFFFF);
@@ -213,8 +217,9 @@ public class ProjectionHandler {
             font.drawString(font.trimStringToWidth(hint, PANEL_WIDTH - 10), x + 5, lineY, 0x808080);
             lineY += 10;
         }
-        GL11.glEnable(GL11.GL_DEPTH_TEST);
         GL11.glPopMatrix();
+        GL11.glPopAttrib();
+        GL11.glColor4f(1, 1, 1, 1);
     }
 
     private static String key(KeyBinding binding) {
