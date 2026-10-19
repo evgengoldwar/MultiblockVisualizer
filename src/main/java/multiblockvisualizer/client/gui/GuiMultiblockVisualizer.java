@@ -291,8 +291,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             new FlatButton(
                 () -> I18n.format(
                     "multiblockvisualizer.gui.layer",
-                    layer < 0 ? I18n.format("multiblockvisualizer.gui.all")
-                        : (layer + 1) + "/" + scene.getSizeY()),
+                    layer < 0 ? I18n.format("multiblockvisualizer.gui.all") : (layer + 1) + "/" + scene.getSizeY()),
                 () -> setLayer(-1)).fixedWidth(86)
                     .activeWhen(() -> layer >= 0)
                     .tooltip(() -> I18n.format("multiblockvisualizer.gui.layer.tooltip")));
@@ -309,7 +308,9 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         buttons.add(
             new FlatButton(() -> I18n.format("multiblockvisualizer.gui.project"), this::startProjection)
                 .tooltip(() -> I18n.format("multiblockvisualizer.gui.project.tooltip")));
-        buttons.add(new FlatButton(() -> "?", () -> {}).fixedWidth(18).tooltip(GuiMultiblockVisualizer::getControlsHelp));
+        buttons.add(
+            new FlatButton(() -> "?", () -> {}).fixedWidth(18)
+                .tooltip(GuiMultiblockVisualizer::getControlsHelp));
 
         int gap = 3;
         int total = -gap;
@@ -377,8 +378,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         done.y = top + (rows - 1) * 20 + 6;
     }
 
-    private void addOption(String key, BooleanSupplier getter,
-        Consumer<Boolean> setter) {
+    private void addOption(String key, BooleanSupplier getter, Consumer<Boolean> setter) {
         optionButtons.add(
             new FlatButton(
                 () -> I18n.format("multiblockvisualizer.options." + key) + ": "
@@ -398,17 +398,27 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         int panelH = rows * 20 + 34;
         int panelY = optionButtons.get(0).y - 26;
         drawRoundedPanel(width / 2 - OPTION_WIDTH / 2 - 10, panelY, OPTION_WIDTH + 20, panelH, 0xF0101418, 0x60FFFFFF);
-        drawCenteredString(fontRendererObj, I18n.format("multiblockvisualizer.options.title"), width / 2, panelY + 8, ACCENT);
+        drawCenteredString(
+            fontRendererObj,
+            I18n.format("multiblockvisualizer.options.title"),
+            width / 2,
+            panelY + 8,
+            ACCENT);
         for (FlatButton b : optionButtons) b.draw(fontRendererObj, mouseX, mouseY);
         for (FlatButton b : optionButtons) {
             if (b.isHovered(mouseX, mouseY) && b.getTooltip() != null) {
-                drawHoveringText(fontRendererObj.listFormattedStringToWidth(b.getTooltip(), 220), mouseX, mouseY, fontRendererObj);
+                drawHoveringText(
+                    fontRendererObj.listFormattedStringToWidth(b.getTooltip(), 220),
+                    mouseX,
+                    mouseY,
+                    fontRendererObj);
             }
         }
     }
 
     private static String getControlsHelp() {
-        StringBuilder help = new StringBuilder(EnumChatFormatting.GOLD + I18n.format("multiblockvisualizer.gui.controls"));
+        StringBuilder help = new StringBuilder(
+            EnumChatFormatting.GOLD + I18n.format("multiblockvisualizer.gui.controls"));
         for (int i = 1; i <= 8; i++) {
             help.append('\n')
                 .append(EnumChatFormatting.GRAY)
@@ -441,11 +451,12 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             FlatButton label = new FlatButton(() -> {
                 String text = setting.name + ": " + setting.getValueText();
                 return fontRendererObj.trimStringToWidth(text, SETTING_WIDTH - 40);
-            }, () -> {
-                if (setting.reset()) applySettings();
-            }).fixedWidth(SETTING_WIDTH - 36)
+            }, () -> { if (setting.reset()) applySettings(); }).fixedWidth(SETTING_WIDTH - 36)
                 .activeWhen(() -> !setting.unset && !(setting.isTier() && setting.value == 1))
-                .tooltip(() -> setting.name + "\n" + EnumChatFormatting.GRAY + I18n.format("multiblockvisualizer.gui.setting.tooltip"));
+                .tooltip(
+                    () -> setting.name + "\n"
+                        + EnumChatFormatting.GRAY
+                        + I18n.format("multiblockvisualizer.gui.setting.tooltip"));
             FlatButton plus = new FlatButton(() -> "+", () -> changeSetting(setting, isShiftKeyDown() ? 10 : 1))
                 .fixedWidth(16)
                 .enabledWhen(() -> setting.unset || setting.value < setting.max);
@@ -507,8 +518,8 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             renderScene(mouseX, mouseY, time, partialTicks);
             playLandingSounds(time);
         } else {
-            String msg = I18n.format(
-                scene.error != null ? "multiblockvisualizer.gui.error" : "multiblockvisualizer.gui.empty");
+            String msg = I18n
+                .format(scene.error != null ? "multiblockvisualizer.gui.error" : "multiblockvisualizer.gui.empty");
             drawCenteredString(fontRendererObj, msg, sceneX + sceneW / 2, sceneY + sceneH / 2 - 4, 0xFF8080);
         }
 
@@ -537,11 +548,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         RenderHelper.disableStandardItemLighting();
         GL11.glDisable(GL11.GL_LIGHTING);
 
-        fontRendererObj.drawStringWithShadow(
-            EnumChatFormatting.BOLD + controller.getDisplayName(),
-            32,
-            8,
-            0xFFFFFF);
+        fontRendererObj.drawStringWithShadow(EnumChatFormatting.BOLD + controller.getDisplayName(), 32, 8, 0xFFFFFF);
 
         String info = I18n.format(
             "multiblockvisualizer.gui.info",
@@ -569,8 +576,8 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
     private void drawIngredientPanel(int mouseX, int mouseY) {
         drawRoundedPanel(panelX, panelY, panelW, panelH, 0xC0101418, 0x30FFFFFF);
-        String title = I18n.format(
-            layer < 0 ? "multiblockvisualizer.gui.components" : "multiblockvisualizer.gui.components_layer");
+        String title = I18n
+            .format(layer < 0 ? "multiblockvisualizer.gui.components" : "multiblockvisualizer.gui.components_layer");
         fontRendererObj.drawStringWithShadow(title, panelX + 6, panelY + 6, ACCENT);
         drawRect(panelX + 4, panelY + 17, panelX + panelW - 4, panelY + 18, 0x30FFFFFF);
 
@@ -594,9 +601,11 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             }
             if (StructureScene.sameItem(stack, scene.getSelection())) {
                 drawRoundedPanel(panelX + 2, rowY, panelW - 4, ROW_HEIGHT, 0x40E6B450, ACCENT);
-            } else if (mouseX >= panelX + 2 && mouseX < panelX + panelW - 2 && mouseY >= rowY && mouseY < rowY + ROW_HEIGHT) {
-                drawRect(panelX + 2, rowY, panelX + panelW - 2, rowY + ROW_HEIGHT, 0x30FFFFFF);
-            }
+            } else if (mouseX >= panelX + 2 && mouseX < panelX + panelW - 2
+                && mouseY >= rowY
+                && mouseY < rowY + ROW_HEIGHT) {
+                    drawRect(panelX + 2, rowY, panelX + panelW - 2, rowY + ROW_HEIGHT, 0x30FFFFFF);
+                }
 
             RenderHelper.enableGUIStandardItemLighting();
             GL11.glEnable(GL12.GL_RESCALE_NORMAL);
@@ -653,11 +662,8 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             drawRect(sceneX + 5, y + 1, sceneX + 12, y + 8, 0xFF000000 | color);
             String hint = scene.hatches.hintForDot.get(dot);
             String text = dot + (hint == null ? "" : ": " + hint);
-            fontRendererObj.drawStringWithShadow(
-                fontRendererObj.trimStringToWidth(text, maxWidth),
-                sceneX + 16,
-                y,
-                0xE0E0E0);
+            fontRendererObj
+                .drawStringWithShadow(fontRendererObj.trimStringToWidth(text, maxWidth), sceneX + 16, y, 0xE0E0E0);
             y += 11;
         }
     }
@@ -666,13 +672,21 @@ public class GuiMultiblockVisualizer extends GuiScreen {
     private void drawTooltips(int mouseX, int mouseY) {
         for (FlatButton button : settingButtons) {
             if (!scene.isEmpty() && button.isHovered(mouseX, mouseY) && button.getTooltip() != null) {
-                drawHoveringText(fontRendererObj.listFormattedStringToWidth(button.getTooltip(), 240), mouseX, mouseY, fontRendererObj);
+                drawHoveringText(
+                    fontRendererObj.listFormattedStringToWidth(button.getTooltip(), 240),
+                    mouseX,
+                    mouseY,
+                    fontRendererObj);
                 return;
             }
         }
         for (FlatButton button : buttons) {
             if (button.isHovered(mouseX, mouseY) && button.getTooltip() != null) {
-                drawHoveringText(fontRendererObj.listFormattedStringToWidth(button.getTooltip(), 240), mouseX, mouseY, fontRendererObj);
+                drawHoveringText(
+                    fontRendererObj.listFormattedStringToWidth(button.getTooltip(), 240),
+                    mouseX,
+                    mouseY,
+                    fontRendererObj);
                 return;
             }
         }
@@ -695,7 +709,8 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             if (dot != HatchScanner.NO_DOT) {
                 EnumChatFormatting dotColor = EnumColor.VALUES[dot % EnumColor.VALUES.length].formatting;
                 lines.add("");
-                lines.add(EnumChatFormatting.GOLD + I18n.format("multiblockvisualizer.gui.hint_dot", dotColor + "" + dot));
+                lines.add(
+                    EnumChatFormatting.GOLD + I18n.format("multiblockvisualizer.gui.hint_dot", dotColor + "" + dot));
                 String hint = scene.hatches.hintForDot.get(dot);
                 if (hint != null) {
                     lines.addAll(
@@ -756,7 +771,10 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         viewport.clear();
         GL11.glGetFloat(GL11.GL_MODELVIEW_MATRIX, modelMatrix);
         GL11.glGetFloat(GL11.GL_PROJECTION_MATRIX, projMatrix);
-        viewport.put(0, vx).put(1, vy).put(2, vw).put(3, vh);
+        viewport.put(0, vx)
+            .put(1, vy)
+            .put(2, vw)
+            .put(3, vh);
 
         try {
             mc.entityRenderer.disableLightmap(0);

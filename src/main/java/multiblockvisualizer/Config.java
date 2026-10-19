@@ -40,8 +40,11 @@ public class Config {
             0.1f,
             10f,
             "Speed multiplier of the build animation (2 = twice as fast)");
-        autoRotate = configuration
-            .getBoolean("autoRotate", Configuration.CATEGORY_GENERAL, autoRotate, "Slowly spin the structure by default");
+        autoRotate = configuration.getBoolean(
+            "autoRotate",
+            Configuration.CATEGORY_GENERAL,
+            autoRotate,
+            "Slowly spin the structure by default");
         viewerAnimation = configuration.getBoolean(
             "viewerAnimation",
             Configuration.CATEGORY_GENERAL,

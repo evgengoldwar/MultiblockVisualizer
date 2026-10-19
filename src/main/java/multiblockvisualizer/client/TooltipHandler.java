@@ -115,6 +115,8 @@ public class TooltipHandler {
         float progress = Math.min(1f, (holdTicks + (isKeyDown() ? partialTicks : 0)) / (float) Config.holdTicks);
         String full = "[" + key + "] " + text;
         int filled = Math.round(full.length() * progress);
-        return EnumChatFormatting.GOLD + full.substring(0, filled) + EnumChatFormatting.DARK_GRAY + full.substring(filled);
+        return EnumChatFormatting.GOLD + full.substring(0, filled)
+            + EnumChatFormatting.DARK_GRAY
+            + full.substring(filled);
     }
 }
