@@ -66,7 +66,8 @@ public class StructureScene {
     /** Above this many units the per-frame cost of animating each one separately starts to hurt. */
     private static final int MAX_UNITS = 2500;
 
-    public final TrackedDummyWorld world = new TrackedDummyWorld();
+    /** recreated for every build: TrackedDummyWorld#clear() does not exist in older BlockRenderer6343 versions */
+    public TrackedDummyWorld world = new TrackedDummyWorld();
 
     public final List<AnimUnit> units = new ArrayList<>();
     /** packed block position -> index in {@link #units} */
@@ -147,7 +148,7 @@ public class StructureScene {
         this.constructable = constructable;
         this.trigger = trigger.copy();
         acceptedItems.clear();
-        world.clear();
+        world = new TrackedDummyWorld();
         units.clear();
         unitOfBlock.clear();
         renderedTiles.clear();
