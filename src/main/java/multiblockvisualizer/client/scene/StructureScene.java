@@ -345,7 +345,7 @@ public class StructureScene {
     }
 
     /** Compiles the given blocks into list (solid pass) and list + 1 (translucent pass). */
-    private void compileBlocks(int list, LongIterable blocks, boolean allFaces) {
+    public void compileBlocks(int list, LongIterable blocks, boolean allFaces) {
         Minecraft mc = Minecraft.getMinecraft();
         RenderBlocks renderBlocks = new RenderBlocks(world);
         renderBlocks.renderAllFaces = allFaces;

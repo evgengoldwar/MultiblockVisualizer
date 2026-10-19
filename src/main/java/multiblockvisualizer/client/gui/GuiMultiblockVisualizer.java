@@ -1,5 +1,12 @@
 package multiblockvisualizer.client.gui;
 
+import static multiblockvisualizer.client.scene.Anim.GL_CONSTANT_ALPHA;
+import static multiblockvisualizer.client.scene.Anim.GL_ONE_MINUS_CONSTANT_ALPHA;
+import static multiblockvisualizer.client.scene.Anim.UNIT_DURATION;
+import static multiblockvisualizer.client.scene.Anim.applyUnitTransform;
+import static multiblockvisualizer.client.scene.Anim.clamp01;
+import static multiblockvisualizer.client.scene.Anim.easeOutCubic;
+
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
@@ -49,6 +56,7 @@ import it.unimi.dsi.fastutil.longs.LongSet;
 import multiblockvisualizer.Config;
 import multiblockvisualizer.MultiblockVisualizer;
 import multiblockvisualizer.client.StructureHelper;
+import multiblockvisualizer.client.projection.Projection;
 import multiblockvisualizer.client.scene.HatchScanner;
 import multiblockvisualizer.client.scene.StructureScene;
 import multiblockvisualizer.client.scene.StructureScene.AnimUnit;
@@ -62,14 +70,9 @@ public class GuiMultiblockVisualizer extends GuiScreen {
     public static final int ACCENT = 0xFFE6B450;
 
     private static final float FOV = 40f;
-    private static final float UNIT_DURATION = 0.45f;
-    private static final float DROP_HEIGHT = 1.6f;
     private static final float INTRO_DURATION = 0.9f;
     private static final float AUTO_ROTATE_SPEED = 9f;
     private static final int ROW_HEIGHT = 18;
-    // LWJGL 2 only exposes these through ARB_imaging, the values are core since OpenGL 1.4
-    private static final int GL_CONSTANT_ALPHA = 0x8003;
-    private static final int GL_ONE_MINUS_CONSTANT_ALPHA = 0x8004;
     private static final float GHOST_ALPHA = 0.12f;
     private static final ResourceLocation LAND_SOUND = new ResourceLocation("random.click");
 
@@ -234,6 +237,14 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         scene.setHatchHighlight(!scene.isHatchHighlight(), layer);
     }
 
+    /** Hands the built structure (with the current tier/channels) over to the in-world projection. */
+    private void startProjection() {
+        if (scene.isEmpty() || mc.thePlayer == null) return;
+        // the projection takes this scene over, its display lists are recompiled on the first world frame
+        Projection.INSTANCE.start(scene, controller);
+        mc.thePlayer.closeScreen();
+    }
+
     private void skipAnimation() {
         float time = (System.nanoTime() - animStart) / 1e9f;
         if (time < getTotalDuration() + INTRO_DURATION) {
@@ -289,6 +300,9 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             new FlatButton(() -> I18n.format("multiblockvisualizer.gui.rotate"), () -> autoRotate = !autoRotate)
                 .activeWhen(() -> autoRotate));
         buttons.add(new FlatButton(() -> I18n.format("multiblockvisualizer.gui.reset_view"), this::resetCamera));
+        buttons.add(
+            new FlatButton(() -> I18n.format("multiblockvisualizer.gui.project"), this::startProjection)
+                .tooltip(() -> I18n.format("multiblockvisualizer.gui.project.tooltip")));
         buttons.add(new FlatButton(() -> "?", () -> {}).fixedWidth(18).tooltip(GuiMultiblockVisualizer::getControlsHelp));
 
         int gap = 3;
@@ -845,14 +859,6 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         setPassState(0, 1f);
     }
 
-    private static void applyUnitTransform(AnimUnit unit, float p) {
-        float drop = (1 - easeOutCubic(p)) * DROP_HEIGHT;
-        float s = 0.55f + 0.45f * easeOutBack(p);
-        GL11.glTranslatef(unit.centerX, unit.centerY + drop, unit.centerZ);
-        GL11.glScalef(s, s, s);
-        GL11.glTranslatef(-unit.centerX, -unit.centerY, -unit.centerZ);
-    }
-
     private static void setPassState(int pass, float alpha) {
         GL11.glColor4f(1, 1, 1, 1);
         if (pass == 0 && alpha >= 1) {
@@ -1194,21 +1200,5 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         Gui.drawRect(x, y + 1, x + 1, y + h - 1, border);
         Gui.drawRect(x + w - 1, y + 1, x + w, y + h - 1, border);
         Gui.drawRect(x + 1, y + 1, x + w - 1, y + h - 1, fill);
-    }
-
-    private static float clamp01(float v) {
-        return v < 0 ? 0 : v > 1 ? 1 : v;
-    }
-
-    private static float easeOutCubic(float t) {
-        float f = 1 - clamp01(t);
-        return 1 - f * f * f;
-    }
-
-    private static float easeOutBack(float t) {
-        t = clamp01(t);
-        float c1 = 1.70158f, c3 = c1 + 1;
-        float f = t - 1;
-        return 1 + c3 * f * f * f + c1 * f * f;
     }
 }
