@@ -24,6 +24,7 @@ import org.lwjgl.opengl.GL12;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import multiblockvisualizer.ClientProxy;
+import multiblockvisualizer.Config;
 import multiblockvisualizer.client.gui.GuiMultiblockVisualizer;
 
 /** Input, world rendering and the build progress panel of the in-world projection. */
@@ -96,7 +97,7 @@ public class ProjectionHandler {
         if (event.type != RenderGameOverlayEvent.ElementType.ALL) return;
         if (projection.getState() == Projection.State.NONE || projection.getController() == null) return;
         // only in the world view, a GUI on top would cover it anyway
-        if (mc.gameSettings.showDebugInfo || mc.currentScreen != null) return;
+        if (!Config.projectionPanel || mc.gameSettings.showDebugInfo || mc.currentScreen != null) return;
 
         long now = System.nanoTime();
         float delta = lastFrame == 0 ? 0 : Math.min(0.1f, (now - lastFrame) / 1e9f);
@@ -125,7 +126,8 @@ public class ProjectionHandler {
             hints.add(I18n.format("multiblockvisualizer.projection.remove", detach));
         }
 
-        int height = 24 + (placing ? 0 : 26) + hints.size() * 10 + 4;
+        if (!Config.projectionHints) hints.clear();
+        int height = 24 + (placing ? 0 : 26) + hints.size() * 10 + (hints.isEmpty() ? 0 : 4);
         if (!placing && projection.getWrong() > 0) height += 10;
         if (!placing && projection.getVariants() > 0) height += 10;
         if (!placing && projection.getLayer() >= 0) height += 18;

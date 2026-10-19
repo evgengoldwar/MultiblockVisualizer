@@ -92,6 +92,8 @@ public class Projection {
     /** whether the shown layer was already complete at the last check, so it only advances when finished now */
     private boolean layerWasDone = true;
     private int ghostList = -1;
+    /** every block, shown while choosing a place */
+    private int previewList = -1;
     private int ticksToCheck;
     private boolean completed;
 
@@ -450,13 +452,21 @@ public class Projection {
             GL11.glPolygonOffset(1f, 2f);
 
             if (state == State.PLACING) {
-                drawHologram(scene.getFullList(), 0.35f + 0.1f * pulse);
-            } else if (time < lastUnitStart + UNIT_DURATION / Config.animationSpeed) {
+                if (previewList < 0) {
+                    previewList = GLAllocation.generateDisplayLists(2);
+                    scene.compileBlocks(
+                        previewList,
+                        scene.world.blockMap.keySet(),
+                        Config.projectionMiniBlocks,
+                        getBlockScale());
+                }
+                drawHologram(previewList, 0.35f + 0.1f * pulse);
+            } else if (Config.projectionAnimation && time < lastUnitStart + UNIT_DURATION / Config.animationSpeed) {
                 drawBuildAnimation(time);
             } else {
                 if (ghostList < 0 && !ghostBlocks.isEmpty()) {
                     ghostList = GLAllocation.generateDisplayLists(2);
-                    scene.compileBlocks(ghostList, ghostBlocks, true);
+                    scene.compileBlocks(ghostList, ghostBlocks, true, getBlockScale());
                 }
                 if (ghostList >= 0) drawHologram(ghostList, 0.4f + 0.1f * pulse);
             }
@@ -585,8 +595,18 @@ public class Projection {
         t.draw();
     }
 
+    private static float getBlockScale() {
+        return Config.projectionMiniBlocks ? 0.5f : 1f;
+    }
+
+    /** Display options changed (e.g. mini blocks), rebuild what was compiled with the old ones. */
+    public void onSettingsChanged() {
+        releaseGhost();
+    }
+
     private void releaseGhost() {
         if (ghostList >= 0) GLAllocation.deleteDisplayLists(ghostList);
-        ghostList = -1;
+        if (previewList >= 0) GLAllocation.deleteDisplayLists(previewList);
+        ghostList = previewList = -1;
     }
 }

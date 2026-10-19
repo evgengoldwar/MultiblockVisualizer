@@ -356,6 +356,14 @@ public class StructureScene {
 
     /** Compiles the given blocks into list (solid pass) and list + 1 (translucent pass). */
     public void compileBlocks(int list, LongIterable blocks, boolean allFaces) {
+        compileBlocks(list, blocks, allFaces, 1f);
+    }
+
+    /**
+     * @param scale below 1 every block is shrunk around its own centre (mini blocks), so blocks inside the
+     *              structure stay visible between the outer ones
+     */
+    public void compileBlocks(int list, LongIterable blocks, boolean allFaces, float scale) {
         Minecraft mc = Minecraft.getMinecraft();
         RenderBlocks renderBlocks = new RenderBlocks(world);
         renderBlocks.renderAllFaces = allFaces;
@@ -373,14 +381,28 @@ public class StructureScene {
                         Block block = world.blockMap.get(pos);
                         if (block == null || !block.canRenderInPass(pass)) continue;
                         renderBlocks.setRenderBounds(0, 0, 0, 1, 1, 1);
+                        int x = CoordinatePacker.unpackX(pos), y = CoordinatePacker.unpackY(pos),
+                            z = CoordinatePacker.unpackZ(pos);
+                        if (scale != 1f) {
+                            // one batch per block, the recorded matrix shrinks it around its centre
+                            tessellator.draw();
+                            GL11.glPushMatrix();
+                            GL11.glTranslatef(x + 0.5f, y + 0.5f, z + 0.5f);
+                            GL11.glScalef(scale, scale, scale);
+                            GL11.glTranslatef(-x - 0.5f, -y - 0.5f, -z - 0.5f);
+                            tessellator.startDrawingQuads();
+                            tessellator.setBrightness(15 << 20 | 15 << 4);
+                        }
                         try {
-                            renderBlocks.renderBlockByRenderType(
-                                block,
-                                CoordinatePacker.unpackX(pos),
-                                CoordinatePacker.unpackY(pos),
-                                CoordinatePacker.unpackZ(pos));
+                            renderBlocks.renderBlockByRenderType(block, x, y, z);
                         } catch (Throwable t) {
                             MultiblockVisualizer.LOG.warn("Failed to render a preview block", t);
+                        }
+                        if (scale != 1f) {
+                            tessellator.draw();
+                            GL11.glPopMatrix();
+                            tessellator.startDrawingQuads();
+                            tessellator.setBrightness(15 << 20 | 15 << 4);
                         }
                     }
                 } finally {

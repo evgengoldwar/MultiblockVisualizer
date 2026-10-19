@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 import net.minecraft.block.Block;
 import net.minecraft.client.audio.PositionedSoundRecord;
@@ -107,6 +109,10 @@ public class GuiMultiblockVisualizer extends GuiScreen {
     private int panelX, panelY, panelW, panelH;
     private final List<FlatButton> buttons = new ArrayList<>();
     private FlatButton closeButton;
+    private FlatButton optionsButton;
+    /** the options window is open on top of everything */
+    private boolean optionsOpen;
+    private final List<FlatButton> optionButtons = new ArrayList<>();
 
     // input
     private int dragButton = -1;
@@ -153,7 +159,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         if (scene == null) {
             settings = new StructureSettings(constructable);
             scene = new StructureScene();
-            rebuild(true, true);
+            rebuild(true, Config.viewerAnimation);
         }
 
         buildButtons();
@@ -326,6 +332,77 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         closeButton.height = 16;
         closeButton.x = width - 8 - 16;
         closeButton.y = 8;
+
+        optionsButton = new FlatButton(() -> I18n.format("multiblockvisualizer.options"), () -> optionsOpen = true);
+        optionsButton.height = 16;
+        optionsButton.width = optionsButton.measure(fontRendererObj);
+        optionsButton.x = closeButton.x - 3 - optionsButton.width;
+        optionsButton.y = 8;
+
+        buildOptionButtons();
+    }
+
+    private static final int OPTION_WIDTH = 230;
+
+    /** Persistent options, saved to the config file as soon as they are toggled. */
+    private void buildOptionButtons() {
+        optionButtons.clear();
+        addOption("autoRotate", () -> Config.autoRotate, v -> {
+            Config.autoRotate = v;
+            autoRotate = v;
+        });
+        addOption("viewerAnimation", () -> Config.viewerAnimation, v -> Config.viewerAnimation = v);
+        addOption("projectionAnimation", () -> Config.projectionAnimation, v -> Config.projectionAnimation = v);
+        addOption("projectionPanel", () -> Config.projectionPanel, v -> Config.projectionPanel = v);
+        addOption("projectionHints", () -> Config.projectionHints, v -> Config.projectionHints = v);
+        addOption("projectionMiniBlocks", () -> Config.projectionMiniBlocks, v -> {
+            Config.projectionMiniBlocks = v;
+            Projection.INSTANCE.onSettingsChanged();
+        });
+
+        FlatButton done = new FlatButton(() -> I18n.format("gui.done"), () -> optionsOpen = false).fixedWidth(80);
+        optionButtons.add(done);
+
+        int rows = optionButtons.size();
+        int top = height / 2 - (rows * 20 + 20) / 2 + 20;
+        int left = width / 2 - OPTION_WIDTH / 2;
+        for (int i = 0; i < rows - 1; i++) {
+            FlatButton b = optionButtons.get(i);
+            b.x = left;
+            b.y = top + i * 20;
+        }
+        done.x = width / 2 - 40;
+        done.y = top + (rows - 1) * 20 + 6;
+    }
+
+    private void addOption(String key, BooleanSupplier getter,
+        Consumer<Boolean> setter) {
+        optionButtons.add(
+            new FlatButton(
+                () -> I18n.format("multiblockvisualizer.options." + key) + ": "
+                    + (getter.getAsBoolean() ? EnumChatFormatting.GREEN + I18n.format("options.on")
+                        : EnumChatFormatting.RED + I18n.format("options.off")),
+                () -> {
+                    setter.accept(!getter.getAsBoolean());
+                    Config.save();
+                }).fixedWidth(OPTION_WIDTH)
+                    .activeWhen(getter)
+                    .tooltip(() -> I18n.format("multiblockvisualizer.options." + key + ".tooltip")));
+    }
+
+    private void drawOptions(int mouseX, int mouseY) {
+        drawRect(0, 0, width, height, 0xA0000000);
+        int rows = optionButtons.size();
+        int panelH = rows * 20 + 34;
+        int panelY = optionButtons.get(0).y - 26;
+        drawRoundedPanel(width / 2 - OPTION_WIDTH / 2 - 10, panelY, OPTION_WIDTH + 20, panelH, 0xF0101418, 0x60FFFFFF);
+        drawCenteredString(fontRendererObj, I18n.format("multiblockvisualizer.options.title"), width / 2, panelY + 8, ACCENT);
+        for (FlatButton b : optionButtons) b.draw(fontRendererObj, mouseX, mouseY);
+        for (FlatButton b : optionButtons) {
+            if (b.isHovered(mouseX, mouseY) && b.getTooltip() != null) {
+                drawHoveringText(fontRendererObj.listFormattedStringToWidth(b.getTooltip(), 220), mouseX, mouseY, fontRendererObj);
+            }
+        }
     }
 
     private static String getControlsHelp() {
@@ -441,6 +518,12 @@ public class GuiMultiblockVisualizer extends GuiScreen {
             if (scene.isHatchHighlight()) drawHatchLegend();
         }
         closeButton.draw(fontRendererObj, mouseX, mouseY);
+        optionsButton.draw(fontRendererObj, mouseX, mouseY);
+
+        if (optionsOpen) {
+            drawOptions(mouseX, mouseY);
+            return;
+        }
 
         drawTooltips(mouseX, mouseY);
     }
@@ -1031,8 +1114,22 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int button) {
+        if (optionsOpen) {
+            if (button != 0) return;
+            for (FlatButton b : optionButtons) {
+                if (b.click(mouseX, mouseY)) {
+                    playClick();
+                    return;
+                }
+            }
+            return;
+        }
         if (button == 0) {
             if (closeButton.click(mouseX, mouseY)) return;
+            if (optionsButton.click(mouseX, mouseY)) {
+                playClick();
+                return;
+            }
             if (!scene.isEmpty()) {
                 for (FlatButton b : new ArrayList<>(settingButtons)) {
                     if (b.click(mouseX, mouseY)) {
@@ -1077,6 +1174,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
      * whole GUI pixels (2-4 real pixels), which made rotating by hand look like it ran at a low frame rate.
      */
     private void updateCamera(float delta) {
+        if (optionsOpen) dragButton = -1;
         if (dragButton >= 0 && !Mouse.isButtonDown(dragButton)) dragButton = -1;
         if (dragButton >= 0) {
             float scale = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight).getScaleFactor();
@@ -1120,7 +1218,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
     public void handleMouseInput() {
         super.handleMouseInput();
         int wheel = Mouse.getEventDWheel();
-        if (wheel == 0) return;
+        if (wheel == 0 || optionsOpen) return;
         int mouseX = Mouse.getEventX() * width / mc.displayWidth;
         int mouseY = height - Mouse.getEventY() * height / mc.displayHeight - 1;
         int steps = wheel > 0 ? 1 : -1;
@@ -1144,6 +1242,10 @@ public class GuiMultiblockVisualizer extends GuiScreen {
 
     @Override
     protected void keyTyped(char typedChar, int keyCode) {
+        if (optionsOpen) {
+            if (keyCode == Keyboard.KEY_ESCAPE) optionsOpen = false;
+            return;
+        }
         if (keyCode == Keyboard.KEY_ESCAPE && scene.isHighlightActive()) {
             scene.clearHighlight();
             return;
