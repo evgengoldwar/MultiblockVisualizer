@@ -64,6 +64,9 @@ public class GuiMultiblockVisualizer extends GuiScreen {
     private static final float INTRO_DURATION = 0.9f;
     private static final float AUTO_ROTATE_SPEED = 9f;
     private static final int ROW_HEIGHT = 18;
+    // LWJGL 2 only exposes these through ARB_imaging, the values are core since OpenGL 1.4
+    private static final int GL_CONSTANT_ALPHA = 0x8003;
+    private static final int GL_ONE_MINUS_CONSTANT_ALPHA = 0x8004;
     private static final ResourceLocation LAND_SOUND = new ResourceLocation("random.click");
 
     private final ItemStack controller;
@@ -621,7 +624,7 @@ public class GuiMultiblockVisualizer extends GuiScreen {
         } else if (pass == 0) {
             GL11.glEnable(GL11.GL_BLEND);
             GL14.glBlendColor(1, 1, 1, alpha);
-            GL11.glBlendFunc(GL14.GL_CONSTANT_ALPHA, GL14.GL_ONE_MINUS_CONSTANT_ALPHA);
+            GL11.glBlendFunc(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA);
             GL11.glDepthMask(true);
         } else {
             GL11.glEnable(GL11.GL_BLEND);
