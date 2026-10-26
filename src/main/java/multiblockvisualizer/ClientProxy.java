@@ -7,6 +7,7 @@ import org.lwjgl.input.Keyboard;
 
 import cpw.mods.fml.client.registry.ClientRegistry;
 import cpw.mods.fml.common.FMLCommonHandler;
+import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import multiblockvisualizer.client.TooltipHandler;
@@ -56,6 +57,12 @@ public class ClientProxy extends CommonProxy {
     @Override
     public void init(FMLInitializationEvent event) {
         super.init(event);
+        for (String mod : new String[] { "gregtech", "blockrenderer6343", "NotEnoughItems", "structurelib" }) {
+            if (!Loader.isModLoaded(mod)) {
+                MultiblockVisualizer.LOG.error("{} is not installed, Multiblock Visualizer stays disabled", mod);
+                return;
+            }
+        }
         ClientRegistry.registerKeyBinding(OPEN_KEY);
         ClientRegistry.registerKeyBinding(ROTATE_KEY);
         ClientRegistry.registerKeyBinding(DETACH_KEY);

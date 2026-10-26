@@ -13,8 +13,10 @@ import cpw.mods.fml.common.event.FMLPreInitializationEvent;
     version = Tags.VERSION,
     name = "MultiblockVisualizer",
     acceptedMinecraftVersions = "[1.7.10]",
-    acceptableRemoteVersions = "*",
-    dependencies = "required-after:gregtech;required-after:blockrenderer6343;required-after:NotEnoughItems")
+    acceptableRemoteVersions = "*")
+// No "dependencies": required-after entries make FML re-sort the whole load order, and in GTNH that broke the NH
+// Core Mod's crafting recipe loader (multiblock controllers lost their recipes). The mods we need are only used
+// at runtime and are checked in ClientProxy instead.
 public class MultiblockVisualizer {
 
     public static final String MODID = "multiblockvisualizer";
